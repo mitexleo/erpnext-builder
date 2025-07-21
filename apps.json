@@ -1,0 +1,26 @@
+[
+  {
+    "url": "https://github.com/frappe/erpnext",
+    "branch": "version-15"
+  },
+  {
+    "url": "https://github.com/frappe/hrms",
+    "branch": "version-15"
+  },
+  {
+    "url": "https://github.com/The-Commit-Company/raven",
+    "branch": "main"
+  },
+  {
+    "url": "https://github.com/frappe/builder",
+    "branch": "master"
+  },
+  {
+    "url": "https://github.com/frappe/helpdesk",
+    "branch": "main"
+  },
+  {
+    "url": "https://github.com/frappe/crm",
+    "branch": "main"
+  }
+]
