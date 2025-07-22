@@ -1,53 +1,79 @@
-name: Build and Push ERPNext Custom Image
+name: Build ERPNext Custom Image on New Releases
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: "0 3 * * 1"
-
-permissions:
-  contents: write
-  packages: write
+    - cron: "0 */6 * * *" # every 6 hours
+  workflow_dispatch: # manual trigger
 
 env:
   DOCKER_IMAGE: mitexleo/syserp
 
+permissions:
+  contents: write # Allows pushing commits (update files)
+  packages: write # Allows pushing Docker images if using GitHub Packages (optional)
+
 jobs:
-  build:
+  check-and-build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Docker
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to DockerHub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Increment version
-        id: version
+      - name: Install jq and curl
         run: |
-          CURRENT_VERSION=$(cat VERSION)
-          echo "Current version: $CURRENT_VERSION"
-          IFS='.' read -r major minor patch <<< "$CURRENT_VERSION"
-          NEW_PATCH=$((patch + 1))
-          NEW_VERSION="$major.$minor.$NEW_PATCH"
-          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
-          echo $NEW_VERSION > VERSION
+          sudo apt-get update && sudo apt-get install -y jq curl
 
-      - name: Commit updated version
+      - name: Read apps.json into repos
+        id: read_apps
+        run: |
+          # Extract repo URLs and normalize to owner/repo format
+          REPOS=$(jq -r '.[] | .url' apps.json | sed -E 's|https://github.com/([^/]+/[^/]+).*|\1|')
+          echo "repos=$REPOS" >> $GITHUB_OUTPUT
+
+      - name: Check for new releases
+        id: check_releases
+        run: |
+          CHANGED=false
+          NEW_VERSIONS=$(cat REPO_VERSIONS.json)
+
+          for repo in ${{ steps.read_apps.outputs.repos }}
+          do
+            LATEST_TAG=$(curl -s https://api.github.com/repos/$repo/releases/latest | jq -r .tag_name)
+            if [ "$LATEST_TAG" = "null" ]; then
+              echo "No release found for $repo, skipping..."
+              continue
+            fi
+
+            CURRENT_TAG=$(jq -r --arg r "$repo" '.[$r]' REPO_VERSIONS.json)
+            echo "Repo: $repo"
+            echo "Current tag: $CURRENT_TAG"
+            echo "Latest tag: $LATEST_TAG"
+
+            if [ "$LATEST_TAG" != "$CURRENT_TAG" ]; then
+              echo "New release detected for $repo!"
+              NEW_VERSIONS=$(echo "$NEW_VERSIONS" | jq --arg r "$repo" --arg t "$LATEST_TAG" '.[$r]=$t')
+              CHANGED=true
+            fi
+          done
+
+          echo "$NEW_VERSIONS" > REPO_VERSIONS.json
+          echo "changed=$CHANGED" >> $GITHUB_OUTPUT
+
+      - name: Commit updated REPO_VERSIONS.json
+        if: steps.check_releases.outputs.changed == 'true'
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout ${{ github.ref }}   # Switch back to the current branch
-          git add VERSION
-          git commit -m "Bump version to ${{ env.NEW_VERSION }}" || echo "No changes to commit"
+          git add REPO_VERSIONS.json
+          git commit -m "Update release tags in REPO_VERSIONS.json"
           git push
+
+      - name: Stop if no new release
+        if: steps.check_releases.outputs.changed != 'true'
+        run: |
+          echo "No new releases detected. Exiting workflow."
+          exit 0
 
       - name: Base64 encode apps.json
         run: |
@@ -57,7 +83,32 @@ jobs:
       - name: Clone frappe_docker
         run: git clone https://github.com/frappe/frappe_docker
 
-      - name: Build Docker Image
+      - name: Increment image version
+        id: version
+        run: |
+          CURRENT_VERSION=$(cat VERSION)
+          echo "Current version: $CURRENT_VERSION"
+          IFS='.' read -r major minor patch <<< "$CURRENT_VERSION"
+          NEW_PATCH=$((patch + 1))
+          NEW_VERSION="$major.$minor.$NEW_PATCH"
+          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+          echo "$NEW_VERSION" > VERSION
+
+      - name: Commit updated VERSION file
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add VERSION
+          git commit -m "Bump Docker image version to ${{ env.NEW_VERSION }}" || echo "No changes to commit"
+          git push
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build Docker image
         run: |
           cd frappe_docker
           docker build \
@@ -68,7 +119,7 @@ jobs:
             --tag=${{ env.DOCKER_IMAGE }}:latest \
             --file=images/layered/Containerfile .
 
-      - name: Push Docker Image
+      - name: Push Docker image
         run: |
           docker push ${{ env.DOCKER_IMAGE }}:${{ env.NEW_VERSION }}
           docker push ${{ env.DOCKER_IMAGE }}:latest
