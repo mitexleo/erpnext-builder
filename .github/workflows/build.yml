@@ -28,7 +28,9 @@ jobs:
         id: read_apps
         run: |
           # Extract repo URLs and normalize to owner/repo format
-          REPOS=$(jq -r '.[] | .url' apps.json | sed -E 's|https://github.com/([^/]+/[^/]+).*|\1|')
+          REPOS=$(jq -r '.[] | .url' apps.json | sed -E 's|https://github.com/([^/]+/[^/]+).*|\1|' | tr '\n' ' ')
+          # Add frappe/frappe separately since it's not in apps.json but needs version monitoring
+          REPOS="frappe/frappe $REPOS"
           echo "repos=$REPOS" >> $GITHUB_OUTPUT
 
       - name: Check for new releases
@@ -60,15 +62,6 @@ jobs:
           echo "$NEW_VERSIONS" > REPO_VERSIONS.json
           echo "changed=$CHANGED" >> $GITHUB_OUTPUT
 
-      - name: Commit updated REPO_VERSIONS.json
-        if: steps.check_releases.outputs.changed == 'true'
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add REPO_VERSIONS.json
-          git commit -m "Update release tags in REPO_VERSIONS.json"
-          git push
-
       - name: Stop if no new release
         if: steps.check_releases.outputs.changed != 'true'
         run: |
@@ -94,12 +87,13 @@ jobs:
           echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
           echo "$NEW_VERSION" > VERSION
 
-      - name: Commit updated VERSION file
+      - name: Commit updated files
+        if: steps.check_releases.outputs.changed == 'true'
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add VERSION
-          git commit -m "Bump Docker image version to ${{ env.NEW_VERSION }}" || echo "No changes to commit"
+          git add REPO_VERSIONS.json VERSION
+          git commit -m "Update release tags and bump version to ${{ env.NEW_VERSION }}"
           git push
 
       - name: Login to Docker Hub
