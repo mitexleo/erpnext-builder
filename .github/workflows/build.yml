@@ -5,6 +5,10 @@ on:
   schedule:
     - cron: "0 3 * * 1"
 
+permissions:
+  contents: write
+  packages: write
+
 env:
   DOCKER_IMAGE: mitexleo/syserp
 
@@ -35,6 +39,15 @@ jobs:
           NEW_VERSION="$major.$minor.$NEW_PATCH"
           echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
           echo $NEW_VERSION > VERSION
+
+      - name: Commit updated version
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout ${{ github.ref }}   # Switch back to the current branch
+          git add VERSION
+          git commit -m "Bump version to ${{ env.NEW_VERSION }}" || echo "No changes to commit"
+          git push
 
       - name: Base64 encode apps.json
         run: |
