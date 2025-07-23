@@ -218,7 +218,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ./frappe_docker
-          file: ./frappe_docker/images/layered/Containerfile
+          file: images/layered/Containerfile
           build-args: |
             FRAPPE_PATH=https://github.com/frappe/frappe
             FRAPPE_BRANCH=version-15
