@@ -28,6 +28,35 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y jq curl
 
+      - name: Validate required files
+        id: validate_files
+        run: |
+          if [ ! -f "apps.json" ]; then
+            echo "Error: apps.json not found"
+            exit 1
+          fi
+          CREATED_FILES=false
+          if [ ! -f "REPO_VERSIONS.json" ]; then
+            echo "Creating REPO_VERSIONS.json with empty object"
+            echo "{}" > REPO_VERSIONS.json
+            CREATED_FILES=true
+          fi
+          if [ ! -f "VERSION" ]; then
+            echo "Creating VERSION file with initial version"
+            echo "1.0.0" > VERSION
+            CREATED_FILES=true
+          fi
+          echo "created_files=$CREATED_FILES" >> $GITHUB_OUTPUT
+
+      - name: Commit initial files if created
+        if: steps.validate_files.outputs.created_files == 'true'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add REPO_VERSIONS.json VERSION
+          git commit -m "Initialize REPO_VERSIONS.json and VERSION files" || true
+          git push || true
+
       - name: Read apps.json into repos
         id: read_apps
         run: |
@@ -45,13 +74,28 @@ jobs:
 
           for repo in ${{ steps.read_apps.outputs.repos }}
           do
-            LATEST_TAG=$(curl -s https://api.github.com/repos/$repo/releases/latest | jq -r .tag_name)
-            if [ "$LATEST_TAG" = "null" ]; then
+            echo "Checking releases for $repo..."
+
+            # Get latest release with proper error handling
+            API_RESPONSE=$(curl -s -f "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null || echo "null")
+
+            if [ "$API_RESPONSE" = "null" ]; then
               echo "No release found for $repo, skipping..."
               continue
             fi
 
-            CURRENT_TAG=$(jq -r --arg r "$repo" '.[$r]' REPO_VERSIONS.json)
+            LATEST_TAG=$(echo "$API_RESPONSE" | jq -r '.tag_name // empty')
+            if [ -z "$LATEST_TAG" ]; then
+              echo "No valid tag found for $repo, skipping..."
+              continue
+            fi
+
+            # Handle case where repo doesn't exist in REPO_VERSIONS.json yet
+            CURRENT_TAG=$(jq -r --arg r "$repo" '.[$r] // empty' REPO_VERSIONS.json)
+            if [ -z "$CURRENT_TAG" ]; then
+              CURRENT_TAG="none"
+            fi
+
             echo "Repo: $repo"
             echo "Current tag: $CURRENT_TAG"
             echo "Latest tag: $LATEST_TAG"
@@ -109,14 +153,14 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          ref: main # Ensure we get the latest commit with updated files
+
+      - name: Pull latest changes
+        run: |
+          git fetch origin
+          git reset --hard origin/main
 
       - name: Clone frappe_docker
         run: git clone https://github.com/frappe/frappe_docker
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
@@ -124,24 +168,18 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./frappe_docker
-          file: ./images/layered/Containerfile
-          build-args: |
-            FRAPPE_PATH=https://github.com/frappe/frappe
-            FRAPPE_BRANCH=version-15
-            APPS_JSON_BASE64=${{ needs.check-releases.outputs.apps_json_base64 }}
-          tags: |
-            ${{ env.DOCKER_IMAGE }}:${{ needs.check-releases.outputs.new_version }}
-            ${{ env.DOCKER_IMAGE }}:latest
-          push: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Image build summary
+      - name: Build Docker image
         run: |
-          echo "✅ Successfully built and pushed Docker images:"
-          echo "   - ${{ env.DOCKER_IMAGE }}:${{ needs.check-releases.outputs.new_version }}"
-          echo "   - ${{ env.DOCKER_IMAGE }}:latest"
+          cd frappe_docker
+          docker build \
+            --build-arg=FRAPPE_PATH=https://github.com/frappe/frappe \
+            --build-arg=FRAPPE_BRANCH=version-15 \
+            --build-arg=APPS_JSON_BASE64=${{ needs.check-releases.outputs.apps_json_base64 }} \
+            --tag=${{ env.DOCKER_IMAGE }}:${{ needs.check-releases.outputs.new_version }} \
+            --tag=${{ env.DOCKER_IMAGE }}:latest \
+            --file=images/layered/Containerfile .
+
+      - name: Push Docker image
+        run: |
+          docker push ${{ env.DOCKER_IMAGE }}:${{ needs.check-releases.outputs.new_version }}
+          docker push ${{ env.DOCKER_IMAGE }}:latest
