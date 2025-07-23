@@ -223,8 +223,7 @@ jobs:
       - name: Build Docker image with retry
         uses: docker/build-push-action@v6
         with:
-          context: ./frappe_docker
-          file: images/layered/Containerfile
+          file: ./frappe_docker/images/layered/Containerfile
           build-args: |
             FRAPPE_PATH=https://github.com/frappe/frappe
             FRAPPE_BRANCH=version-15
