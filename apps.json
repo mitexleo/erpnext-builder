@@ -14,13 +14,5 @@
   {
     "url": "https://github.com/frappe/builder",
     "branch": "master"
-  },
-  {
-    "url": "https://github.com/frappe/helpdesk",
-    "branch": "main"
-  },
-  {
-    "url": "https://github.com/frappe/crm",
-    "branch": "main"
   }
 ]

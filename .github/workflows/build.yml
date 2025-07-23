@@ -82,17 +82,23 @@ jobs:
           do
             echo "Checking releases for $repo..."
 
-            # Get latest release with proper error handling
-            API_RESPONSE=$(curl -s -f "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null || echo "null")
-
-            if [ "$API_RESPONSE" = "null" ]; then
-              echo "No release found for $repo, skipping..."
-              continue
+            # Get all releases and filter for v15.x versions for frappe repos
+            if [[ "$repo" == "frappe/frappe" || "$repo" == "frappe/erpnext" || "$repo" == "frappe/hrms" ]]; then
+              echo "Filtering for v15.x releases for $repo"
+              API_RESPONSE=$(curl -s -f "https://api.github.com/repos/$repo/releases" 2>/dev/null || echo "[]")
+              LATEST_TAG=$(echo "$API_RESPONSE" | jq -r '[.[] | select(.tag_name | startswith("v15.")) | .tag_name][0] // empty')
+            else
+              # For non-frappe repos, get latest release normally
+              API_RESPONSE=$(curl -s -f "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null || echo "null")
+              if [ "$API_RESPONSE" = "null" ]; then
+                echo "No release found for $repo, skipping..."
+                continue
+              fi
+              LATEST_TAG=$(echo "$API_RESPONSE" | jq -r '.tag_name // empty')
             fi
 
-            LATEST_TAG=$(echo "$API_RESPONSE" | jq -r '.tag_name // empty')
             if [ -z "$LATEST_TAG" ]; then
-              echo "No valid tag found for $repo, skipping..."
+              echo "No valid v15.x tag found for $repo, skipping..."
               continue
             fi
 
@@ -192,13 +198,16 @@ jobs:
       - name: Build Docker image
         run: |
           cd frappe_docker
+          echo "Building with APPS_JSON_BASE64: ${{ needs.check-releases.outputs.apps_json_base64 }}"
           docker build \
             --build-arg=FRAPPE_PATH=https://github.com/frappe/frappe \
             --build-arg=FRAPPE_BRANCH=version-15 \
             --build-arg=APPS_JSON_BASE64=${{ needs.check-releases.outputs.apps_json_base64 }} \
             --tag=${{ env.DOCKER_IMAGE }}:${{ needs.check-releases.outputs.new_version }} \
             --tag=${{ env.DOCKER_IMAGE }}:latest \
-            --file=images/layered/Containerfile .
+            --file=images/layered/Containerfile . \
+            --progress=plain \
+            --no-cache
 
       - name: Push Docker image
         run: |
