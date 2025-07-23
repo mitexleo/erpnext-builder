@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: "0 */6 * * *" # every 6 hours
   workflow_dispatch: # manual trigger
+    inputs:
+      force_build:
+        description: "Force build even if no new releases detected"
+        required: false
+        default: false
+        type: boolean
 
 env:
   DOCKER_IMAGE: mitexleo/syserp
@@ -108,12 +114,19 @@ jobs:
           done
 
           echo "$NEW_VERSIONS" > REPO_VERSIONS.json
+
+          # Check if force build is requested
+          if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
+            echo "Force build requested via manual trigger"
+            CHANGED=true
+          fi
+
           echo "changed=$CHANGED" >> $GITHUB_OUTPUT
 
           if [ "$CHANGED" = "false" ]; then
             echo "No new releases detected. Build will be skipped."
           else
-            echo "New releases detected. Proceeding with build."
+            echo "New releases detected or force build requested. Proceeding with build."
           fi
 
       - name: Increment image version
@@ -127,7 +140,11 @@ jobs:
           NEW_VERSION="$major.$minor.$NEW_PATCH"
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "$NEW_VERSION" > VERSION
-          echo "Version bumped to: $NEW_VERSION"
+          if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
+            echo "Version bumped to: $NEW_VERSION (force build)"
+          else
+            echo "Version bumped to: $NEW_VERSION"
+          fi
 
       - name: Base64 encode apps.json
         if: steps.check_releases.outputs.changed == 'true'
@@ -142,7 +159,11 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add REPO_VERSIONS.json VERSION
-          git commit -m "Update release tags and bump version to ${{ steps.version.outputs.new_version }}"
+          if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
+            git commit -m "Force build: bump version to ${{ steps.version.outputs.new_version }}"
+          else
+            git commit -m "Update release tags and bump version to ${{ steps.version.outputs.new_version }}"
+          fi
           git push
 
   build-and-push:
