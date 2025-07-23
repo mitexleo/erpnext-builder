@@ -10,8 +10,6 @@ This project builds a custom ERPNext Docker image with the following application
 - **HRMS** - Human Resource Management System
 - **Raven** - Team communication and collaboration tool
 - **Builder** - Website and page builder
-- **Helpdesk** - Customer support and ticketing system
-- **CRM** - Customer Relationship Management
 
 ## Features
 
