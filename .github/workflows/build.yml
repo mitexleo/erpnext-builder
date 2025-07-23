@@ -189,6 +189,12 @@ jobs:
       - name: Clone frappe_docker
         run: git clone https://github.com/frappe/frappe_docker
 
+      - name: Debug frappe_docker contents
+        run: |
+          echo "--- Listing contents of frappe_docker ---"
+          ls -R frappe_docker
+          echo "----------------------------------------"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
