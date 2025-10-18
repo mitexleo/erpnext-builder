@@ -1,7 +1,7 @@
 {
   "frappe/frappe": "v15.86.0",
-  "frappe/erpnext": "v15.83.1",
+  "frappe/erpnext": "v15.83.2",
   "frappe/hrms": "v15.51.0",
   "The-Commit-Company/raven": "v2.6.4",
-  "frappe/builder": "v1.20.1"
+  "frappe/builder": "v1.20.2"
 }
