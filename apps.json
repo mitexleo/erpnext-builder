@@ -14,9 +14,5 @@
   {
     "url": "https://github.com/frappe/crm",
     "branch": "main"
-  },
-  {
-    "url": "https://github.com/frappe/drive",
-    "branch": "main"
   }
 ]
