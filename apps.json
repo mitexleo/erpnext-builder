@@ -8,10 +8,6 @@
     "branch": "version-15"
   },
   {
-    "url": "https://github.com/The-Commit-Company/raven",
-    "branch": "main"
-  },
-  {
     "url": "https://github.com/frappe/builder",
     "branch": "master"
   },
