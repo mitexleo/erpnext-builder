@@ -8,7 +8,6 @@ This project builds a custom ERPNext Docker image with the following application
 
 - **ERPNext** - Open source ERP system
 - **HRMS** - Human Resource Management System
-- **Raven** - Team communication and collaboration tool
 - **Builder** - Website and page builder
 - **Frappe** - Core framework for building web applications
 
