@@ -4,7 +4,7 @@
   "frappe/hrms": "v15.54.1",
   "The-Commit-Company/raven": "v2.6.5",
   "frappe/builder": "v1.21.2",
-  "frappe/crm": "v1.56.6",
+  "frappe/crm": "v1.57.0",
   "frappe/helpdesk": "v1.17.3",
   "frappe/drive": "v0.3.0"
 }
