@@ -82,11 +82,11 @@ jobs:
           do
             echo "Checking releases for $repo..."
 
-            # Get all releases and filter for v15.x versions for frappe repos
+            # Get all releases and filter for v16.x versions for frappe repos
             if [[ "$repo" == "frappe/frappe" || "$repo" == "frappe/erpnext" || "$repo" == "frappe/hrms" ]]; then
-              echo "Filtering for v15.x releases for $repo"
+              echo "Filtering for v16.x releases for $repo"
               API_RESPONSE=$(curl -s -f "https://api.github.com/repos/$repo/releases" 2>/dev/null || echo "[]")
-              LATEST_TAG=$(echo "$API_RESPONSE" | jq -r '[.[] | select(.tag_name | startswith("v15.")) | .tag_name][0] // empty')
+              LATEST_TAG=$(echo "$API_RESPONSE" | jq -r '[.[] | select(.tag_name | startswith("v16.")) | .tag_name][0] // empty')
             else
               # For non-frappe repos, get latest release normally
               API_RESPONSE=$(curl -s -f "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null || echo "null")
@@ -98,7 +98,7 @@ jobs:
             fi
 
             if [ -z "$LATEST_TAG" ]; then
-              echo "No valid v15.x tag found for $repo, skipping..."
+              echo "No valid v16.x tag found for $repo, skipping..."
               continue
             fi
 
