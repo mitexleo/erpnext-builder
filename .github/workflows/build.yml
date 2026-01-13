@@ -220,7 +220,7 @@ jobs:
           cd frappe_docker
           docker build \
             --build-arg=FRAPPE_PATH=https://github.com/frappe/frappe \
-            --build-arg=FRAPPE_BRANCH=version-15 \
+            --build-arg=FRAPPE_BRANCH=version-16 \
             --build-arg=APPS_JSON_BASE64=${{ needs.check-releases.outputs.apps_json_base64 }} \
             --tag=${{ env.DOCKER_IMAGE }}:${{ needs.check-releases.outputs.new_version }} \
             --tag=${{ env.DOCKER_IMAGE }}:latest \
