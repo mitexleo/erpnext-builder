@@ -1,9 +1,9 @@
 {
-  "frappe/frappe": "v16.2.0",
+  "frappe/frappe": "v16.2.1",
   "frappe/erpnext": "v16.1.0",
   "frappe/hrms": "v16.1.0",
   "The-Commit-Company/raven": "v2.6.5",
-  "frappe/builder": "v1.21.2",
+  "frappe/builder": "v1.21.3",
   "frappe/crm": "v1.57.11",
   "frappe/helpdesk": "v1.17.3",
   "frappe/drive": "v0.3.0"
