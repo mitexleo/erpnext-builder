@@ -3,7 +3,7 @@
   "frappe/erpnext": "v16.4.1",
   "frappe/hrms": "v16.3.1",
   "The-Commit-Company/raven": "v2.6.5",
-  "frappe/builder": "v1.22.3",
+  "frappe/builder": "v1.22.4",
   "frappe/crm": "v1.58.5",
   "frappe/helpdesk": "v1.17.3",
   "frappe/drive": "v0.3.0"
