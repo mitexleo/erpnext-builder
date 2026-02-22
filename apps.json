@@ -18,5 +18,9 @@
   {
     "url": "https://github.com/frappe/helpdesk",
     "branch": "main"
+  },
+  {
+    "url": "https://github.com/frappe/telephony",
+    "branch": "develop"
   }
 ]
