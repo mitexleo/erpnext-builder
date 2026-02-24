@@ -24,7 +24,7 @@
     "branch": "develop"
   },
   {
-    "url": "https://github.com/frappe/mail",
-    "branch": "develop"
+    "url": "https://github.com/frappe/offsite_backups",
+    "branch": "version-16"
   }
 ]
