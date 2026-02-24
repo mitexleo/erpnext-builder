@@ -259,23 +259,27 @@ jobs:
             exit 1
           fi
 
-          # Add cleanup commands before the final FROM stage
-          # This removes pip cache, npm cache, .pyc files, __pycache__ dirs, and .map files
-          if sed -i '/^FROM frappe\/base/i RUN rm -rf /home/frappe/.cache/pip/* && rm -rf /home/frappe/.npm/_cacache/* && find /home/frappe/frappe-bench -name "*.pyc" -delete && find /home/frappe/frappe-bench -name "__pycache__" -type d -delete && find /home/frappe/frappe-bench -name "*.map" -delete' images/layered/Containerfile; then
+          # Remove any existing cleanup command to avoid duplication
+          # Look for lines starting with RUN that contain cache cleanup commands
+          sed -i '/^RUN.*rm -rf.*\.cache\/pip/d' images/layered/Containerfile
+          sed -i '/^RUN.*pip cache purge/d' images/layered/Containerfile
+          sed -i '/^RUN.*npm cache clean/d' images/layered/Containerfile
+          sed -i '/^RUN.*yarn cache clean/d' images/layered/Containerfile
+
+          # Create a simple, robust cleanup command
+          # Use package manager commands first, then manual cleanup as fallback
+          CLEANUP_COMMAND="RUN pip cache purge 2>/dev/null || true && npm cache clean --force 2>/dev/null || true && yarn cache clean 2>/dev/null || true && rm -rf /home/frappe/.cache/pip/* 2>/dev/null || true && rm -rf /home/frappe/.npm/_cacache/* 2>/dev/null || true && rm -rf /home/frappe/.cache/yarn/* 2>/dev/null || true && find /home/frappe/frappe-bench -name \"*.pyc\" -delete 2>/dev/null || true && find /home/frappe/frappe-bench -name \"__pycache__\" -type d -exec rm -rf {} + 2>/dev/null || true && find /home/frappe/frappe-bench -name \"*.map\" -delete 2>/dev/null || true"
+
+          # Find the line before "FROM frappe/base" and insert the cleanup command
+          # Use a simple approach: find the line and insert before it
+          if grep -q "FROM frappe/base" images/layered/Containerfile; then
+            # Insert the cleanup command before the FROM line
+            sed -i "/^FROM frappe\/base/i $CLEANUP_COMMAND" images/layered/Containerfile
             echo "✅ Cleanup commands added to Containerfile"
           else
-            echo "⚠️ Failed to add cleanup commands, but continuing build..."
-            # Show the problematic line for debugging
-            echo "Debug: Checking Containerfile structure..."
-            grep -n "FROM frappe/base" images/layered/Containerfile || echo "Pattern not found"
-          fi
-
-          # Ensure .map cleanup is present (in case it was missing from previous runs)
-          if grep -q "RUN rm -rf /home/frappe/.cache/pip" images/layered/Containerfile && ! grep -q '\.map' images/layered/Containerfile; then
-            echo "Adding missing .map cleanup to existing command..."
-            # Append .map cleanup to the existing RUN command
-            sed -i '/RUN rm -rf \/home\/frappe\/\.cache\/pip/ s/\(&& find \/home\/frappe\/frappe-bench -name "__pycache__" -type d -delete\)$/\1 \&\& find \/home\/frappe\/frappe-bench -name "*.map" -delete/' images/layered/Containerfile
-            echo "✅ Added .map cleanup"
+            echo "⚠️ Could not find 'FROM frappe/base' in Containerfile"
+            echo "Containerfile structure:"
+            head -50 images/layered/Containerfile
           fi
 
       - name: Debug frappe_docker contents
