@@ -22,7 +22,7 @@ jobs:
   check-releases:
     runs-on: ubuntu-latest
     outputs:
-      has_changes: ${{ steps.check_releases.outputs.changed }}
+      has_changes: ${{ steps.check_updates.outputs.changed }}
       new_version: ${{ steps.version.outputs.new_version }}
       apps_json_base64: ${{ steps.encode_apps.outputs.apps_json_base64 }}
 
@@ -66,60 +66,118 @@ jobs:
       - name: Read apps.json into repos
         id: read_apps
         run: |
-          # Extract repo URLs and normalize to owner/repo format
-          REPOS=$(jq -r '.[] | .url' apps.json | sed -E 's|https://github.com/([^/]+/[^/]+).*|\1|' | tr '\n' ' ')
-          # Add frappe/frappe separately since it's not in apps.json but needs version monitoring
-          REPOS="frappe/frappe $REPOS"
-          echo "repos=$REPOS" >> $GITHUB_OUTPUT
+          # Create repo-branch mapping from apps.json
+          REPO_BRANCHES='{}'
 
-      - name: Check for new releases
-        id: check_releases
+          # Process each app from apps.json
+          while IFS= read -r line; do
+            if [ -n "$line" ]; then
+              REPO=$(echo "$line" | jq -r '.url' | sed -E 's|https://github.com/([^/]+/[^/]+).*|\1|')
+              BRANCH=$(echo "$line" | jq -r '.branch')
+              REPO_BRANCHES=$(echo "$REPO_BRANCHES" | jq --arg r "$REPO" --arg b "$BRANCH" '.[$r]=$b')
+            fi
+          done < <(jq -c '.[]' apps.json)
+
+          # Add frappe/frappe with version-16 branch (not in apps.json)
+          REPO_BRANCHES=$(echo "$REPO_BRANCHES" | jq '. + {"frappe/frappe": "version-16"}')
+
+          # Extract just repo list for compatibility
+          REPOS=$(echo "$REPO_BRANCHES" | jq -r 'keys[]' | tr '\n' ' ')
+
+          echo "repos=$REPOS" >> $GITHUB_OUTPUT
+          # Output repo_branches as JSON string, escaping newlines for GitHub Actions
+          echo "repo_branches<<EOF" >> $GITHUB_OUTPUT
+          echo "$REPO_BRANCHES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Check for updates
+        id: check_updates
         run: |
           CHANGED=false
-          NEW_VERSIONS=$(cat REPO_VERSIONS.json)
+          CURRENT_VERSIONS=$(cat REPO_VERSIONS.json)
 
-          for repo in ${{ steps.read_apps.outputs.repos }}
-          do
-            echo "Checking releases for $repo..."
+          # Get repo_branches from workflow output
+          REPO_BRANCHES='${{ steps.read_apps.outputs.repo_branches }}'
 
-            # Get all releases and filter for v16.x versions for frappe repos
-            if [[ "$repo" == "frappe/frappe" || "$repo" == "frappe/erpnext" || "$repo" == "frappe/hrms" ]]; then
-              echo "Filtering for v16.x releases for $repo"
-              API_RESPONSE=$(curl -s -f "https://api.github.com/repos/$repo/releases" 2>/dev/null || echo "[]")
-              LATEST_TAG=$(echo "$API_RESPONSE" | jq -r '[.[] | select(.tag_name | startswith("v16.")) | .tag_name][0] // empty')
-            else
-              # For non-frappe repos, get latest release normally
-              API_RESPONSE=$(curl -s -f "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null || echo "null")
-              if [ "$API_RESPONSE" = "null" ]; then
-                echo "No release found for $repo, skipping..."
+          # Iterate through each repo and its branch
+          for repo in $(echo "$REPO_BRANCHES" | jq -r 'keys[]'); do
+            BRANCH=$(echo "$REPO_BRANCHES" | jq -r --arg r "$repo" '.[$r]')
+            echo "Checking $repo branch: $BRANCH..."
+
+            LATEST_VERSION=""
+            VERSION_TYPE=""
+
+            # First try to get the latest commit SHA for the branch
+            COMMIT_RESPONSE=$(curl -s -f "https://api.github.com/repos/$repo/commits/$BRANCH" 2>/dev/null || echo "null")
+            if [ "$COMMIT_RESPONSE" != "null" ]; then
+              LATEST_SHA=$(echo "$COMMIT_RESPONSE" | jq -r '.sha // empty')
+              if [ -n "$LATEST_SHA" ]; then
+                LATEST_VERSION="$LATEST_SHA"
+                VERSION_TYPE="sha"
+                echo "✓ Got commit SHA for branch $BRANCH: ${LATEST_SHA:0:8}"
+              fi
+            fi
+
+            # If we couldn't get commit SHA, try to get latest release tag
+            if [ -z "$LATEST_VERSION" ]; then
+              echo "Could not get commit SHA, trying to find latest release..."
+
+              # For frappe core repos, filter for v16.x releases
+              if [[ "$repo" == "frappe/frappe" || "$repo" == "frappe/erpnext" || "$repo" == "frappe/hrms" ]]; then
+                RELEASES_RESPONSE=$(curl -s -f "https://api.github.com/repos/$repo/releases" 2>/dev/null || echo "[]")
+                LATEST_TAG=$(echo "$RELEASES_RESPONSE" | jq -r '[.[] | select(.tag_name | startswith("v16.")) | .tag_name][0] // empty')
+              else
+                # For other repos, get the latest release
+                RELEASE_RESPONSE=$(curl -s -f "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null || echo "null")
+                if [ "$RELEASE_RESPONSE" != "null" ]; then
+                  LATEST_TAG=$(echo "$RELEASE_RESPONSE" | jq -r '.tag_name // empty')
+                fi
+              fi
+
+              if [ -n "$LATEST_TAG" ]; then
+                LATEST_VERSION="$LATEST_TAG"
+                VERSION_TYPE="tag"
+                echo "✓ Got release tag: $LATEST_TAG"
+              else
+                echo "⚠️ Could not get commit SHA or release tag for $repo, skipping..."
                 continue
               fi
-              LATEST_TAG=$(echo "$API_RESPONSE" | jq -r '.tag_name // empty')
             fi
 
-            if [ -z "$LATEST_TAG" ]; then
-              echo "No valid v16.x tag found for $repo, skipping..."
-              continue
-            fi
-
-            # Handle case where repo doesn't exist in REPO_VERSIONS.json yet
-            CURRENT_TAG=$(jq -r --arg r "$repo" '.[$r] // empty' REPO_VERSIONS.json)
-            if [ -z "$CURRENT_TAG" ]; then
-              CURRENT_TAG="none"
+            # Get current version from REPO_VERSIONS.json
+            CURRENT_VERSION=$(echo "$CURRENT_VERSIONS" | jq -r --arg r "$repo" '.[$r] // empty')
+            if [ -z "$CURRENT_VERSION" ]; then
+              CURRENT_VERSION="none"
             fi
 
             echo "Repo: $repo"
-            echo "Current tag: $CURRENT_TAG"
-            echo "Latest tag: $LATEST_TAG"
+            echo "Branch: $BRANCH"
+            echo "Current version: $CURRENT_VERSION"
+            echo "Latest version: $LATEST_VERSION ($VERSION_TYPE)"
 
-            if [ "$LATEST_TAG" != "$CURRENT_TAG" ]; then
-              echo "New release detected for $repo: $CURRENT_TAG -> $LATEST_TAG"
-              NEW_VERSIONS=$(echo "$NEW_VERSIONS" | jq --arg r "$repo" --arg t "$LATEST_TAG" '.[$r]=$t')
+            # Check if version has changed
+            VERSION_CHANGED=false
+
+            if [ "$CURRENT_VERSION" = "none" ]; then
+              # First time tracking this repo
+              VERSION_CHANGED=true
+              echo "First time tracking $repo, will trigger build"
+            elif [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
+              # Simple string comparison - works for both SHA and tag
+              VERSION_CHANGED=true
+              echo "Version changed: $CURRENT_VERSION -> $LATEST_VERSION"
+            else
+              echo "No change detected"
+            fi
+
+            if [ "$VERSION_CHANGED" = "true" ]; then
+              # Update to latest version
+              CURRENT_VERSIONS=$(echo "$CURRENT_VERSIONS" | jq --arg r "$repo" --arg v "$LATEST_VERSION" '.[$r]=$v')
               CHANGED=true
             fi
           done
 
-          echo "$NEW_VERSIONS" > REPO_VERSIONS.json
+          echo "$CURRENT_VERSIONS" > REPO_VERSIONS.json
 
           # Check if force build is requested
           if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
@@ -130,13 +188,13 @@ jobs:
           echo "changed=$CHANGED" >> $GITHUB_OUTPUT
 
           if [ "$CHANGED" = "false" ]; then
-            echo "No new releases detected. Build will be skipped."
+            echo "No updates detected. Build will be skipped."
           else
-            echo "New releases detected or force build requested. Proceeding with build."
+            echo "Updates detected or force build requested. Proceeding with build."
           fi
 
       - name: Increment image version
-        if: steps.check_releases.outputs.changed == 'true'
+        if: steps.check_updates.outputs.changed == 'true'
         id: version
         run: |
           CURRENT_VERSION=$(cat VERSION)
@@ -153,14 +211,14 @@ jobs:
           fi
 
       - name: Base64 encode apps.json
-        if: steps.check_releases.outputs.changed == 'true'
+        if: steps.check_updates.outputs.changed == 'true'
         id: encode_apps
         run: |
           APPS_JSON_BASE64=$(base64 -w 0 apps.json)
           echo "apps_json_base64=$APPS_JSON_BASE64" >> $GITHUB_OUTPUT
 
       - name: Commit updated files
-        if: steps.check_releases.outputs.changed == 'true'
+        if: steps.check_updates.outputs.changed == 'true'
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
@@ -218,6 +276,14 @@ jobs:
             # Show the problematic line for debugging
             echo "Debug: Checking Containerfile structure..."
             grep -n "FROM frappe/base" images/layered/Containerfile || echo "Pattern not found"
+          fi
+
+          # Ensure .map cleanup is present (in case it was missing from previous runs)
+          if grep -q "RUN rm -rf /home/frappe/.cache/pip" images/layered/Containerfile && ! grep -q '\.map' images/layered/Containerfile; then
+            echo "Adding missing .map cleanup to existing command..."
+            # Append .map cleanup to the existing RUN command
+            sed -i '/RUN rm -rf \/home\/frappe\/\.cache\/pip/ s/\(&& find \/home\/frappe\/frappe-bench -name "__pycache__" -type d -delete\)$/\1 \&\& find \/home\/frappe\/frappe-bench -name "*.map" -delete/' images/layered/Containerfile
+            echo "✅ Added .map cleanup"
           fi
 
       - name: Debug frappe_docker contents
