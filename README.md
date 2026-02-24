@@ -38,9 +38,9 @@ The build process includes several optimizations for reduced image size and fast
 
 ### Build Speed Improvements
 - **Docker BuildKit**: Enabled for advanced build features and better caching
-- **Layer Caching**: GitHub Actions cache for Docker layers between builds
-- **Inline Cache**: BuildKit inline cache for efficient layer reuse
-- **Expected Speedup**: 50-70% faster builds when dependencies haven't changed
+- **Registry & Inline Caching**: Uses Docker registry cache and inline cache for efficient layer reuse between builds
+- **BuildKit Optimization**: Advanced build features for faster builds and smaller images
+- **Expected Speedup**: 30-50% faster builds using registry cache and inline caching
 
 ## Docker Image
 
@@ -125,9 +125,9 @@ The system automatically:
 
 During each build:
 1. **BuildKit Setup**: Configures Docker Buildx for advanced features
-2. **Layer Caching**: Restores and saves Docker layer cache
+2. **Registry Caching**: Pulls cache from previous image in Docker registry
 3. **Containerfile Patching**: Adds cleanup commands to remove unnecessary files
-4. **Optimized Build**: Uses BuildKit with cache arguments for faster builds
+4. **Optimized Build**: Uses BuildKit with inline and registry cache for faster builds
 
 ## Development
 
