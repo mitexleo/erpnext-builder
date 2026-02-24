@@ -8,5 +8,6 @@
   "frappe/helpdesk": "7e33c6a2387197b41a223efc06d287d6a7164876",
   "frappe/drive": "v0.3.0",
   "frappe/mail": "672606a1832f4a8117a2389f90c89290a5a4ce26",
-  "frappe/telephony": "d4ee5b44b52e2fc5ab19b8177d8865df879cb764"
+  "frappe/telephony": "d4ee5b44b52e2fc5ab19b8177d8865df879cb764",
+  "frappe/offsite_backups": "67c1d2416fda733e6d1c740b36a55a60bd7ef686"
 }
