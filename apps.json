@@ -12,10 +12,6 @@
     "branch": "master"
   },
   {
-    "url": "https://github.com/frappe/crm",
-    "branch": "main"
-  },
-  {
     "url": "https://github.com/frappe/helpdesk",
     "branch": "main"
   },
