@@ -8,10 +8,6 @@
     "branch": "version-16"
   },
   {
-    "url": "https://github.com/frappe/builder",
-    "branch": "master"
-  },
-  {
     "url": "https://github.com/frappe/helpdesk",
     "branch": "main"
   },
