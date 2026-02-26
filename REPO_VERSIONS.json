@@ -1,6 +1,6 @@
 {
-  "frappe/frappe": "4599c14cbc06ddf2cdad04178ba730aed52ff7a0",
-  "frappe/erpnext": "ca9f9de39ffa66a810aa8e790e6658f3fe1ffef5",
+  "frappe/frappe": "6f63292768565ae12418072b01561a00558608fc",
+  "frappe/erpnext": "e1782901e4fd402ce9f547a25d4fcfc108776912",
   "frappe/hrms": "7780627709b2352d4b6709c0dba33d024ddf2c76",
   "The-Commit-Company/raven": "v2.6.5",
   "frappe/builder": "5377f0ab9b588e61dff993cc590fb1c055cded8f",
