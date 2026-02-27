@@ -1,11 +1,11 @@
 {
-  "frappe/frappe": "e677b20feec93f4decbf368acc0ac018f91cb942",
+  "frappe/frappe": "41c54181306f24e77c0dea441a96e21011d3a54d",
   "frappe/erpnext": "e671f5a3ac7f6eab682454bf4aa3357d5b901509",
   "frappe/hrms": "7780627709b2352d4b6709c0dba33d024ddf2c76",
   "The-Commit-Company/raven": "v2.6.5",
   "frappe/builder": "5377f0ab9b588e61dff993cc590fb1c055cded8f",
   "frappe/crm": "6e098ee2cc8c7ef41c0a4164646667511095ae05",
-  "frappe/helpdesk": "a332917fc932f5d41d928ab602ebc4e039b91728",
+  "frappe/helpdesk": "1a8bf435785cb295eba3fb39e4539b96b26989db",
   "frappe/drive": "v0.3.0",
   "frappe/mail": "672606a1832f4a8117a2389f90c89290a5a4ce26",
   "frappe/telephony": "d4ee5b44b52e2fc5ab19b8177d8865df879cb764",
