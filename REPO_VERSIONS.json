@@ -9,5 +9,6 @@
   "frappe/drive": "v0.3.0",
   "frappe/mail": "672606a1832f4a8117a2389f90c89290a5a4ce26",
   "frappe/telephony": "d4ee5b44b52e2fc5ab19b8177d8865df879cb764",
-  "frappe/offsite_backups": "67c1d2416fda733e6d1c740b36a55a60bd7ef686"
+  "frappe/offsite_backups": "67c1d2416fda733e6d1c740b36a55a60bd7ef686",
+  "frappe/print_designer": "9d62227e20d13c52fb4be13d05d71f544228af1d"
 }
