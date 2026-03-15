@@ -18,5 +18,9 @@
   {
     "url": "https://github.com/frappe/offsite_backups",
     "branch": "version-16"
+  },
+  {
+    "url": "https://github.com/frappe/print_designer",
+    "branch": "main"
   }
 ]
