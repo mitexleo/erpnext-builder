@@ -1,7 +1,7 @@
 {
   "frappe/frappe": "72972e28d523da4a0c957833b4ad46da75a4a5e7",
   "frappe/erpnext": "372fc96f0cfa470bfd455953b5eed2e64a534ac8",
-  "frappe/hrms": "7fd0ae76ec9100175a1fc2919a2aed490eec33cb",
+  "frappe/hrms": "2a9180f06ef1f0a4879846183890c733964bdec2",
   "The-Commit-Company/raven": "v2.6.5",
   "frappe/builder": "5377f0ab9b588e61dff993cc590fb1c055cded8f",
   "frappe/crm": "6e098ee2cc8c7ef41c0a4164646667511095ae05",
