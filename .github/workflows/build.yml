@@ -15,7 +15,7 @@ env:
   DOCKER_IMAGE: mitexleo/syserp
 
 permissions:
-  contents: write # Allows pushing commits (update files)
+  contents: write # Allows pushing commits (update files) and reading data
   packages: write # Allows pushing Docker images if using GitHub Packages (optional)
 
 jobs:
