@@ -107,41 +107,34 @@ jobs:
             LATEST_VERSION=""
             VERSION_TYPE=""
 
-            # First try to get the latest commit SHA for the branch
-            COMMIT_RESPONSE=$(curl -s -f "https://api.github.com/repos/$repo/commits/$BRANCH" 2>/dev/null || echo "null")
-            if [ "$COMMIT_RESPONSE" != "null" ]; then
-              LATEST_SHA=$(echo "$COMMIT_RESPONSE" | jq -r '.sha // empty')
-              if [ -n "$LATEST_SHA" ]; then
+            # Get the latest commit SHA for the branch with better error handling
+            rm -f /tmp/commit_response.json
+            HTTP_CODE=$(curl -s -o /tmp/commit_response.json -w "%{http_code}" "https://api.github.com/repos/$repo/commits/$BRANCH" 2>/dev/null || echo "000")
+            
+            if [ "$HTTP_CODE" = "200" ]; then
+              LATEST_SHA=$(jq -r '.sha // empty' /tmp/commit_response.json)
+              if [ -n "$LATEST_SHA" ] && [ "$LATEST_SHA" != "null" ]; then
                 LATEST_VERSION="$LATEST_SHA"
                 VERSION_TYPE="sha"
                 echo "✓ Got commit SHA for branch $BRANCH: ${LATEST_SHA:0:8}"
+              else
+                echo "⚠️ Empty SHA response for $repo (HTTP $HTTP_CODE)"
               fi
+            elif [ "$HTTP_CODE" = "403" ]; then
+              echo "⚠️ Rate limited by GitHub API (HTTP 403). Will retry next run."
+              continue
+            elif [ "$HTTP_CODE" = "404" ]; then
+              echo "⚠️ Branch $BRANCH not found for $repo (HTTP 404)"
+              continue
+            else
+              echo "⚠️ Failed to get commit for $repo (HTTP $HTTP_CODE)"
+              continue
             fi
 
-            # If we couldn't get commit SHA, try to get latest release tag
+            # If we couldn't get commit SHA, skip this repo
             if [ -z "$LATEST_VERSION" ]; then
-              echo "Could not get commit SHA, trying to find latest release..."
-
-              # For frappe core repos, filter for v16.x releases
-              if [[ "$repo" == "frappe/frappe" || "$repo" == "frappe/erpnext" || "$repo" == "frappe/hrms" ]]; then
-                RELEASES_RESPONSE=$(curl -s -f "https://api.github.com/repos/$repo/releases" 2>/dev/null || echo "[]")
-                LATEST_TAG=$(echo "$RELEASES_RESPONSE" | jq -r '[.[] | select(.tag_name | startswith("v16.")) | .tag_name][0] // empty')
-              else
-                # For other repos, get the latest release
-                RELEASE_RESPONSE=$(curl -s -f "https://api.github.com/repos/$repo/releases/latest" 2>/dev/null || echo "null")
-                if [ "$RELEASE_RESPONSE" != "null" ]; then
-                  LATEST_TAG=$(echo "$RELEASE_RESPONSE" | jq -r '.tag_name // empty')
-                fi
-              fi
-
-              if [ -n "$LATEST_TAG" ]; then
-                LATEST_VERSION="$LATEST_TAG"
-                VERSION_TYPE="tag"
-                echo "✓ Got release tag: $LATEST_TAG"
-              else
-                echo "⚠️ Could not get commit SHA or release tag for $repo, skipping..."
-                continue
-              fi
+              echo "⚠️ Could not get commit SHA for $repo, skipping..."
+              continue
             fi
 
             # Get current version from REPO_VERSIONS.json
