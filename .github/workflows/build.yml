@@ -2,11 +2,11 @@ name: Build ERPNext Custom Image on New Releases
 
 on:
   schedule:
-    - cron: "0 */6 * * *" # every 6 hours
+    - cron: "0 * * * *" # every hour
   workflow_dispatch: # manual trigger
     inputs:
       force_build:
-        description: "Force build even if no new releases detected"
+        description: "Force build even if no new commits detected"
         required: false
         default: false
         type: boolean
@@ -19,7 +19,7 @@ permissions:
   packages: write # Allows pushing Docker images if using GitHub Packages (optional)
 
 jobs:
-  check-releases:
+  check-updates:
     runs-on: ubuntu-latest
     outputs:
       has_changes: ${{ steps.check_updates.outputs.changed }}
@@ -107,29 +107,32 @@ jobs:
             LATEST_VERSION=""
             VERSION_TYPE=""
 
-            # Get the latest commit SHA for the branch with better error handling
-            rm -f /tmp/commit_response.json
-            HTTP_CODE=$(curl -s -o /tmp/commit_response.json -w "%{http_code}" "https://api.github.com/repos/$repo/commits/$BRANCH" 2>/dev/null || echo "000")
-            
-            if [ "$HTTP_CODE" = "200" ]; then
-              LATEST_SHA=$(jq -r '.sha // empty' /tmp/commit_response.json)
-              if [ -n "$LATEST_SHA" ] && [ "$LATEST_SHA" != "null" ]; then
-                LATEST_VERSION="$LATEST_SHA"
-                VERSION_TYPE="sha"
-                echo "✓ Got commit SHA for branch $BRANCH: ${LATEST_SHA:0:8}"
+            # Get the latest commit SHA for the branch - use GitHub API with per_page to get latest commit
+            # Try main branch first, then the specified branch
+            for TRY_BRANCH in "$BRANCH" "main" "master"; do
+              rm -f /tmp/commit_response.json
+              HTTP_CODE=$(curl -s -o /tmp/commit_response.json -w "%{http_code}" \
+                "https://api.github.com/repos/$repo/commits/$TRY_BRANCH?per_page=1" 2>/dev/null || echo "000")
+              
+              if [ "$HTTP_CODE" = "200" ]; then
+                LATEST_SHA=$(jq -r '.sha // empty' /tmp/commit_response.json)
+                if [ -n "$LATEST_SHA" ] && [ "$LATEST_SHA" != "null" ]; then
+                  LATEST_VERSION="$LATEST_SHA"
+                  VERSION_TYPE="sha"
+                  echo "✓ Got commit SHA for branch $TRY_BRANCH: ${LATEST_SHA:0:8}"
+                  break
+                fi
+              elif [ "$HTTP_CODE" = "404" ]; then
+                echo "Branch $TRY_BRANCH not found for $repo, trying next..."
+                continue
+              elif [ "$HTTP_CODE" = "403" ]; then
+                echo "⚠️ Rate limited by GitHub API (HTTP 403)"
+                break
               else
-                echo "⚠️ Empty SHA response for $repo (HTTP $HTTP_CODE)"
+                echo "⚠️ Failed to get commit for $repo (HTTP $HTTP_CODE)"
+                break
               fi
-            elif [ "$HTTP_CODE" = "403" ]; then
-              echo "⚠️ Rate limited by GitHub API (HTTP 403). Will retry next run."
-              continue
-            elif [ "$HTTP_CODE" = "404" ]; then
-              echo "⚠️ Branch $BRANCH not found for $repo (HTTP 404)"
-              continue
-            else
-              echo "⚠️ Failed to get commit for $repo (HTTP $HTTP_CODE)"
-              continue
-            fi
+            done
 
             # If we couldn't get commit SHA, skip this repo
             if [ -z "$LATEST_VERSION" ]; then
@@ -219,13 +222,13 @@ jobs:
           if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
             git commit -m "Force build: bump version to ${{ steps.version.outputs.new_version }}"
           else
-            git commit -m "Update release tags and bump version to ${{ steps.version.outputs.new_version }}"
+            git commit -m "Update SHAs and bump version to ${{ steps.version.outputs.new_version }}"
           fi
           git push
 
   build-and-push:
     needs: check-releases
-    if: needs.check-releases.outputs.has_changes == 'true'
+    if: needs.check-updates.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -296,10 +299,10 @@ jobs:
           base64 -w 0 apps.json
           echo ""
           echo "=== From workflow output ==="
-          echo "${{ needs.check-releases.outputs.apps_json_base64 }}"
+          echo "${{ needs.check-updates.outputs.apps_json_base64 }}"
           echo ""
           echo "=== Decoded from workflow ==="
-          echo "${{ needs.check-releases.outputs.apps_json_base64 }}" | base64 -d
+          echo "${{ needs.check-updates.outputs.apps_json_base64 }}" | base64 -d
 
       - name: Build Docker image
         env:
@@ -312,13 +315,13 @@ jobs:
             --cache-from type=registry,ref=${{ env.DOCKER_IMAGE }}:latest \
             --build-arg=FRAPPE_PATH=https://github.com/frappe/frappe \
             --build-arg=FRAPPE_BRANCH=version-16 \
-            --build-arg=APPS_JSON_BASE64=${{ needs.check-releases.outputs.apps_json_base64 }} \
-            --tag=${{ env.DOCKER_IMAGE }}:${{ needs.check-releases.outputs.new_version }} \
+            --build-arg=APPS_JSON_BASE64=${{ needs.check-updates.outputs.apps_json_base64 }} \
+            --tag=${{ env.DOCKER_IMAGE }}:${{ needs.check-updates.outputs.new_version }} \
             --tag=${{ env.DOCKER_IMAGE }}:latest \
             --file=images/layered/Containerfile \
             --load .
 
       - name: Push Docker image
         run: |
-          docker push ${{ env.DOCKER_IMAGE }}:${{ needs.check-releases.outputs.new_version }}
+          docker push ${{ env.DOCKER_IMAGE }}:${{ needs.check-updates.outputs.new_version }}
           docker push ${{ env.DOCKER_IMAGE }}:latest
