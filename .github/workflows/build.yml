@@ -107,9 +107,11 @@ jobs:
             LATEST_VERSION=""
             VERSION_TYPE=""
 
-            # Get the latest commit SHA for the specified branch only
+            # Get the latest commit SHA for the specified branch only (authenticated)
             rm -f /tmp/commit_response.json
             HTTP_CODE=$(curl -s -o /tmp/commit_response.json -w "%{http_code}" \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github+json" \
               "https://api.github.com/repos/$repo/commits/$BRANCH?per_page=1" 2>/dev/null || echo "000")
             
             if [ "$HTTP_CODE" = "200" ]; then
