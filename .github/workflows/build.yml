@@ -97,7 +97,7 @@ jobs:
           CURRENT_VERSIONS=$(cat REPO_VERSIONS.json)
 
           # Get repo_branches from workflow output
-          REPO_BRANCHES="${{ steps.read_apps.outputs.repo_branches }}"
+          REPO_BRANCHES='${{ steps.read_apps.outputs.repo_branches }}'
 
           # Iterate through each repo and its branch
           for repo in $(echo "$REPO_BRANCHES" | jq -r 'keys[]'); do
