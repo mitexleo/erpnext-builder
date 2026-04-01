@@ -5,10 +5,10 @@
   "The-Commit-Company/raven": "v2.6.5",
   "frappe/builder": "5377f0ab9b588e61dff993cc590fb1c055cded8f",
   "frappe/crm": "6e098ee2cc8c7ef41c0a4164646667511095ae05",
-  "frappe/helpdesk": "c3b7de4d3f5e38f7c91a0d8c6c0378f3030af026",
+  "frappe/helpdesk": "eef7c4d4277c1fe77f5de15d05a8dca4ae5e8c24",
   "frappe/drive": "v0.3.0",
   "frappe/mail": "672606a1832f4a8117a2389f90c89290a5a4ce26",
-  "frappe/telephony": "d4ee5b44b52e2fc5ab19b8177d8865df879cb764",
+  "frappe/telephony": "58d32184e44b193e27498d3dd156085c793b7528",
   "frappe/offsite_backups": "67c1d2416fda733e6d1c740b36a55a60bd7ef686",
   "frappe/print_designer": "9d62227e20d13c52fb4be13d05d71f544228af1d"
 }
