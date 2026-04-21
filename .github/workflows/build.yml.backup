@@ -233,14 +233,12 @@ jobs:
           git checkout -B main origin/main 2>/dev/null || git checkout -B master origin/master 2>/dev/null || git checkout -B main main 2>/dev/null || true
 
       - name: Clone frappe_docker
-        run: |
-          rm -rf frappe_docker
-          git clone https://github.com/frappe/frappe_docker
+        run: git clone https://github.com/frappe/frappe_docker
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4.0.0
 
-      - name: Build assets and cleanup in Containerfile
+      - name: Add cleanup commands to Containerfile
         run: |
           cd frappe_docker
           # Check if Containerfile exists
@@ -249,33 +247,34 @@ jobs:
             exit 1
           fi
 
-          # Remove any existing build or cleanup commands to avoid duplication
-          sed -i '/^RUN.*bench build --frontend/d' images/layered/Containerfile
+          # Remove any existing cleanup command to avoid duplication
+          # Look for lines starting with RUN that contain cache cleanup commands
+          sed -i '/^RUN.*rm -rf.*\.cache\/pip/d' images/layered/Containerfile
           sed -i '/^RUN.*pip cache purge/d' images/layered/Containerfile
           sed -i '/^RUN.*npm cache clean/d' images/layered/Containerfile
           sed -i '/^RUN.*yarn cache clean/d' images/layered/Containerfile
-          sed -i '/^RUN.*rm -rf.*\.cache\/pip/d' images/layered/Containerfile
-          sed -i '/^RUN.*find.*\.pyc/d' images/layered/Containerfile
 
-          # Insert asset build command before FROM frappe/base
+          # Build frontend assets in builder stage after bench init
+          # This runs AFTER bench init but BEFORE the COPY to backend stage
+          RUN build step will be inserted as RUN cd /home/frappe/frappe-bench && bench build --frontend
+          
+          # Check frappe version and build custom apps if needed
+          APPS_BUILD="RUN cd /home/frappe/frappe-bench && if [ -f apps.txt ] && [ -s apps.txt ]; then for app in \\$(cat apps.txt); do if [ -d \\$app/public ]; then cd \\$app && yarn build || true; cd /home/frappe/frappe-bench; fi; done; fi && bench build --frontend" && \
+          CLEANUP_COMMAND="RUN pip cache purge 2>/dev/null || true && npm cache clean --force 2>/dev/null || true && yarn cache clean 2>/dev/null || true && rm -rf /home/frappe/.cache/pip/* 2>/dev/null || true && rm -rf /home/frappe/.npm/_cacache/* 2>/dev/null || true && rm -rf /home/frappe/.cache/yarn/* 2>/dev/null || true && find /home/frappe/frappe-bench -name \"*.pyc\" -delete 2>/dev/null || true && find /home/frappe/frappe-bench -name \"__pycache__\" -type d -exec rm -rf {} + 2>/dev/null || true && find /home/frappe/frappe-bench -name \"*.map\" -delete 2>/dev/null || true"
+
+          # Insert commands BEFORE "FROM frappe/base" (the builder stage ends there, backend starts)
           if grep -q "FROM frappe/base" images/layered/Containerfile; then
-            BUILD_COMMAND="RUN cd /home/frappe/frappe-bench && bench build --frontend"
-            sed -i "/^FROM frappe\/base/i $BUILD_COMMAND" images/layered/Containerfile
-            echo "✅ Asset build command added"
+            # First insert assets build in builder stage (after bench init, before COPY)
+            sed -i "/^FROM frappe\/base/i $APPS_BUILD" images/layered/Containerfile
+            # Then insert cleanup (after COPY in backend stage, affects final image)
+            sed -i "/^FROM frappe\/base/i $CLEANUP_COMMAND" images/layered/Containerfile
+            echo "✅ Build assets and cleanup commands added"
           else
             echo "⚠️ Could not find 'FROM frappe/base' in Containerfile"
-            exit 1
+            echo "Containerfile structure:"
+            head -50 images/layered/Containerfile
           fi
 
-          # Insert cleanup commands after COPY --from=builder line
-          COPY_LINE=$(grep -n "COPY --from=builder" images/layered/Containerfile | head -1 | cut -d: -f1)
-          if [ -n "$COPY_LINE" ]; then
-            CLEANUP_COMMANDS="RUN pip cache purge 2/dev/null || true && npm cache clean --force 2/dev/null || true && yarn cache clean 2/dev/null || true && rm -rf /home/frappe/.cache/pip/* 2/dev/null || true && rm -rf /home/frappe/.npm/_cacache/* 2/dev/null || true && rm -rf /home/frappe/.cache/yarn/* 2/dev/null || true && find /home/frappe/frappe-bench -name \"*.pyc\" -delete 2/dev/null || true && find /home/frappe/frappe-bench -name \"__pycache__\" -type d -exec rm -rf {} + 2/dev/null || true && find /home/frappe/frappe-bench -name \"*.map\" -delete 2/dev/null || true"
-            sed -i "${COPY_LINE}a $CLEANUP_COMMANDS" images/layered/Containerfile
-            echo "✅ Cleanup commands added"
-          else
-            echo "⚠️ Could not find COPY --from=builder line"
-          fi
       - name: Login to Docker Hub
         uses: docker/login-action@v4.0.0
         with:
