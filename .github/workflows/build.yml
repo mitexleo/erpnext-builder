@@ -24,7 +24,6 @@ jobs:
     outputs:
       has_changes: ${{ steps.check_updates.outputs.changed }}
       new_version: ${{ steps.version.outputs.new_version }}
-      apps_json_base64: ${{ steps.encode_apps.outputs.apps_json_base64 }}
 
     steps:
       - name: Checkout Repository
@@ -206,13 +205,6 @@ jobs:
             echo "Version bumped to: $NEW_VERSION"
           fi
 
-      - name: Base64 encode apps.json
-        if: steps.check_updates.outputs.changed == 'true'
-        id: encode_apps
-        run: |
-          APPS_JSON_BASE64=$(base64 -w 0 apps.json)
-          echo "apps_json_base64=$APPS_JSON_BASE64" >> $GITHUB_OUTPUT
-
       - name: Commit updated files
         if: steps.check_updates.outputs.changed == 'true'
         run: |
@@ -284,6 +276,10 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+      - name: Copy apps.json for secret mount
+        run: |
+          cp apps.json frappe_docker/apps.json
+
       - name: Build Docker image
         env:
           DOCKER_BUILDKIT: 1
@@ -295,7 +291,7 @@ jobs:
             --cache-from type=registry,ref=${{ env.DOCKER_IMAGE }}:latest \
             --build-arg=FRAPPE_PATH=https://github.com/frappe/frappe \
             --build-arg=FRAPPE_BRANCH=version-16 \
-            --build-arg=APPS_JSON_BASE64=${{ needs.check-updates.outputs.apps_json_base64 }} \
+            --secret=id=apps_json,src=apps.json \
             --tag=${{ env.DOCKER_IMAGE }}:${{ needs.check-updates.outputs.new_version }} \
             --tag=${{ env.DOCKER_IMAGE }}:latest \
             --file=images/layered/Containerfile \
