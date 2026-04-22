@@ -24,6 +24,7 @@ jobs:
     outputs:
       has_changes: ${{ steps.check_updates.outputs.changed }}
       new_version: ${{ steps.version.outputs.new_version }}
+      apps_json_base64: ${{ steps.encode_apps.outputs.apps_json_base64 }}
 
     steps:
       - name: Checkout Repository
@@ -205,6 +206,13 @@ jobs:
             echo "Version bumped to: $NEW_VERSION"
           fi
 
+      - name: Base64 encode apps.json
+        if: steps.check_updates.outputs.changed == 'true'
+        id: encode_apps
+        run: |
+          APPS_JSON_BASE64=$(base64 -w 0 apps.json)
+          echo "apps_json_base64=$APPS_JSON_BASE64" >> $GITHUB_OUTPUT
+
       - name: Commit updated files
         if: steps.check_updates.outputs.changed == 'true'
         run: |
@@ -233,50 +241,48 @@ jobs:
           git checkout -B main origin/main 2>/dev/null || git checkout -B master origin/master 2>/dev/null || git checkout -B main main 2>/dev/null || true
 
       - name: Clone frappe_docker
-        run: |
-          rm -rf frappe_docker
-          git clone https://github.com/frappe/frappe_docker
+        run: git clone https://github.com/frappe/frappe_docker
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4.0.0
 
-      - name: Build assets in Containerfile
+      - name: Add cleanup commands to Containerfile
         run: |
           cd frappe_docker
+          # Check if Containerfile exists
+          if [ ! -f "images/layered/Containerfile" ]; then
+            echo "Error: Containerfile not found at images/layered/Containerfile"
+            exit 1
+          fi
 
-          # Remove any existing cleanup and build commands to avoid duplication
-          sed -i '/^RUN.*bench build/d' images/layered/Containerfile
+          # Remove any existing cleanup command to avoid duplication
+          # Look for lines starting with RUN that contain cache cleanup commands
+          sed -i '/^RUN.*rm -rf.*\.cache\/pip/d' images/layered/Containerfile
           sed -i '/^RUN.*pip cache purge/d' images/layered/Containerfile
           sed -i '/^RUN.*npm cache clean/d' images/layered/Containerfile
           sed -i '/^RUN.*yarn cache clean/d' images/layered/Containerfile
-          sed -i '/^RUN.*rm -rf.*\.cache\/pip/d' images/layered/Containerfile
-          sed -i '/^RUN.*find.*\.pyc/d' images/layered/Containerfile
 
-          # Create a minimal site and build assets before the backend stage
-          # This requires creating a site first for bench build to work
+          # Create a simple, robust cleanup command
+          # Use package manager commands first, then manual cleanup as fallback
+          CLEANUP_COMMAND="RUN pip cache purge 2>/dev/null || true && npm cache clean --force 2>/dev/null || true && yarn cache clean 2>/dev/null || true && rm -rf /home/frappe/.cache/pip/* 2>/dev/null || true && rm -rf /home/frappe/.npm/_cacache/* 2>/dev/null || true && rm -rf /home/frappe/.cache/yarn/* 2>/dev/null || true && find /home/frappe/frappe-bench -name \"*.pyc\" -delete 2>/dev/null || true && find /home/frappe/frappe-bench -name \"__pycache__\" -type d -exec rm -rf {} + 2>/dev/null || true && find /home/frappe/frappe-bench -name \"*.map\" -delete 2>/dev/null || true"
+
+          # Find the line before "FROM frappe/base" and insert the cleanup command
+          # Use a simple approach: find the line and insert before it
           if grep -q "FROM frappe/base" images/layered/Containerfile; then
-            # Command to create a dummy site using SQLite, then build assets
-            ASSET_BUILD="RUN cd /home/frappe/frappe-bench && bench new-site dummy-site --db-type sqlite --force --no-install --quiet && bench build && rm -rf sites/dummy-site"
-            sed -i "/^FROM frappe\/base/i $ASSET_BUILD" images/layered/Containerfile
-            echo "✅ Asset build command added (creates dummy site, builds, then removes site)"
+            # Insert the cleanup command before the FROM line
+            sed -i "/^FROM frappe\/base/i $CLEANUP_COMMAND" images/layered/Containerfile
+            echo "✅ Cleanup commands added to Containerfile"
+          else
+            echo "⚠️ Could not find 'FROM frappe/base' in Containerfile"
+            echo "Containerfile structure:"
+            head -50 images/layered/Containerfile
           fi
 
-          # Insert cleanup commands after COPY --from=builder line
-          COPY_LINE=$(grep -n "COPY --from=builder" images/layered/Containerfile | head -1 | cut -d: -f1)
-          if [ -n "$COPY_LINE" ]; then
-            CLEANUP_COMMANDS="RUN pip cache purge 2/dev/null || true && npm cache clean --force 2/dev/null || true && yarn cache clean 2/dev/null || true && rm -rf /home/frappe/.cache/pip/* 2/dev/null || true && rm -rf /home/frappe/.npm/_cacache/* 2/dev/null || true && rm -rf /home/frappe/.cache/yarn/* 2/dev/null || true && find /home/frappe/frappe-bench -name "*.pyc" -delete 2/dev/null || true && find /home/frappe/frappe-bench -name "__pycache__" -type d -exec rm -rf {} + 2/dev/null || true && find /home/frappe/frappe-bench -name "*.map" -delete 2/dev/null || true"
-            sed -i "${COPY_LINE}a $CLEANUP_COMMANDS" images/layered/Containerfile
-            echo "✅ Cleanup commands added"
-          fi
       - name: Login to Docker Hub
         uses: docker/login-action@v4.0.0
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Copy apps.json for secret mount
-        run: |
-          cp apps.json frappe_docker/apps.json
 
       - name: Build Docker image
         env:
@@ -289,7 +295,7 @@ jobs:
             --cache-from type=registry,ref=${{ env.DOCKER_IMAGE }}:latest \
             --build-arg=FRAPPE_PATH=https://github.com/frappe/frappe \
             --build-arg=FRAPPE_BRANCH=version-16 \
-            --secret=id=apps_json,src=apps.json \
+            --build-arg=APPS_JSON_BASE64=${{ needs.check-updates.outputs.apps_json_base64 }} \
             --tag=${{ env.DOCKER_IMAGE }}:${{ needs.check-updates.outputs.new_version }} \
             --tag=${{ env.DOCKER_IMAGE }}:latest \
             --file=images/layered/Containerfile \
