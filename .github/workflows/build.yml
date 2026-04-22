@@ -250,7 +250,7 @@ jobs:
           fi
 
           # Remove any existing build or cleanup commands to avoid duplication
-          sed -i '/^RUN.*bench build --frontend/d' images/layered/Containerfile
+          sed -i '/^RUN.*bench build/d' images/layered/Containerfile
           sed -i '/^RUN.*pip cache purge/d' images/layered/Containerfile
           sed -i '/^RUN.*npm cache clean/d' images/layered/Containerfile
           sed -i '/^RUN.*yarn cache clean/d' images/layered/Containerfile
@@ -259,7 +259,7 @@ jobs:
 
           # Insert asset build command before FROM frappe/base
           if grep -q "FROM frappe/base" images/layered/Containerfile; then
-            BUILD_COMMAND="RUN cd /home/frappe/frappe-bench && bench build --frontend"
+            BUILD_COMMAND="RUN cd /home/frappe/frappe-bench && bench build"
             sed -i "/^FROM frappe\/base/i $BUILD_COMMAND" images/layered/Containerfile
             echo "✅ Asset build command added"
           else
