@@ -1,24 +1,32 @@
+x-customizable-image: &customizable_image
+  image: ${CUSTOM_IMAGE:-mitexleo/syserp}:${CUSTOM_TAG:-latest}
+  pull_policy: ${PULL_POLICY:-always}
+  restart: ${RESTART_POLICY:-unless-stopped}
+
+x-depends-on-configurator: &depends_on_configurator
+  depends_on:
+    configurator:
+      condition: service_completed_successfully
+
+x-backend-defaults: &backend_defaults
+  <<: [*depends_on_configurator, *customizable_image]
+  networks:
+    - frappe_network
+  volumes:
+    - sites:/home/frappe/frappe-bench/sites
+    - logs:/home/frappe/frappe-bench/logs
+
 services:
   backend:
-    image: frappe/erpnext:v16.14.0
-    networks:
-      - frappe_network
+    <<: *backend_defaults
+    platform: linux/amd64
     deploy:
       restart_policy:
         condition: on-failure
-    volumes:
-      - sites:/home/frappe/frappe-bench/sites
-      - logs:/home/frappe/frappe-bench/logs
-    environment:
-      DB_HOST: db
-      DB_PORT: "3306"
-      MYSQL_ROOT_PASSWORD: admin
-      MARIADB_ROOT_PASSWORD: admin
 
   configurator:
-    image: frappe/erpnext:v16.14.0
-    networks:
-      - frappe_network
+    <<: *backend_defaults
+    platform: linux/amd64
     deploy:
       restart_policy:
         condition: none
@@ -27,7 +35,6 @@ services:
       - -c
     command:
       - >
-        echo "{}" > sites/common_site_config.json;
         ls -1 apps > sites/apps.txt;
         bench set-config -g db_host $$DB_HOST;
         bench set-config -gp db_port $$DB_PORT;
@@ -36,25 +43,20 @@ services:
         bench set-config -g redis_socketio "redis://$$REDIS_QUEUE";
         bench set-config -gp socketio_port $$SOCKETIO_PORT;
     environment:
-      DB_HOST: db
-      DB_PORT: "3306"
-      REDIS_CACHE: redis-cache:6379
-      REDIS_QUEUE: redis-queue:6379
-      SOCKETIO_PORT: "9000"
-    volumes:
-      - sites:/home/frappe/frappe-bench/sites
-      - logs:/home/frappe/frappe-bench/logs
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-3306}
+      REDIS_CACHE: ${REDIS_CACHE:-redis-cache:6379}
+      REDIS_QUEUE: ${REDIS_QUEUE:-redis-queue:6379}
+      SOCKETIO_PORT: 9000
+    depends_on: {}
+    restart: on-failure
 
   create-site:
-    image: frappe/erpnext:v16.14.0
-    networks:
-      - frappe_network
+    <<: *backend_defaults
+    platform: linux/amd64
     deploy:
       restart_policy:
         condition: none
-    volumes:
-      - sites:/home/frappe/frappe-bench/sites
-      - logs:/home/frappe/frappe-bench/logs
     entrypoint:
       - bash
       - -c
@@ -100,10 +102,12 @@ services:
       - db-data:/var/lib/mysql
 
   frontend:
-    image: frappe/erpnext:v16.14.0
+    <<: *customizable_image
+    platform: linux/amd64
     networks:
       - frappe_network
     depends_on:
+      - backend
       - websocket
     deploy:
       restart_policy:
@@ -112,23 +116,21 @@ services:
       - nginx-entrypoint.sh
     environment:
       BACKEND: backend:8000
-      FRAPPE_SITE_NAME_HEADER: frontend
+      FRAPPE_SITE_NAME_HEADER: ${FRAPPE_SITE_NAME_HEADER:-frontend}
       SOCKETIO: websocket:9000
-      UPSTREAM_REAL_IP_ADDRESS: 127.0.0.1
-      UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
-      UPSTREAM_REAL_IP_RECURSIVE: "off"
-      PROXY_READ_TIMEOUT: 120
-      CLIENT_MAX_BODY_SIZE: 50m
+      UPSTREAM_REAL_IP_ADDRESS: ${UPSTREAM_REAL_IP_ADDRESS:-127.0.0.1}
+      UPSTREAM_REAL_IP_HEADER: ${UPSTREAM_REAL_IP_HEADER:-X-Forwarded-For}
+      UPSTREAM_REAL_IP_RECURSIVE: ${UPSTREAM_REAL_IP_RECURSIVE:-off}
+      PROXY_READ_TIMEOUT: ${PROXY_READ_TIMEOUT:-120}
+      CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-50m}
     volumes:
       - sites:/home/frappe/frappe-bench/sites
-      - logs:/home/frappe/frappe-bench/logs
     ports:
-      - "8080:8080"
+      - "${HTTP_PUBLISH_PORT:-8080}:8080"
 
   queue-long:
-    image: frappe/erpnext:v16.14.0
-    networks:
-      - frappe_network
+    <<: *backend_defaults
+    platform: linux/amd64
     deploy:
       restart_policy:
         condition: on-failure
@@ -137,17 +139,10 @@ services:
       - worker
       - --queue
       - long,default,short
-    volumes:
-      - sites:/home/frappe/frappe-bench/sites
-      - logs:/home/frappe/frappe-bench/logs
-    environment:
-      FRAPPE_REDIS_CACHE: redis://redis-cache:6379
-      FRAPPE_REDIS_QUEUE: redis://redis-queue:6379
 
   queue-short:
-    image: frappe/erpnext:v16.14.0
-    networks:
-      - frappe_network
+    <<: *backend_defaults
+    platform: linux/amd64
     deploy:
       restart_policy:
         condition: on-failure
@@ -156,15 +151,9 @@ services:
       - worker
       - --queue
       - short,default
-    volumes:
-      - sites:/home/frappe/frappe-bench/sites
-      - logs:/home/frappe/frappe-bench/logs
-    environment:
-      FRAPPE_REDIS_CACHE: redis://redis-cache:6379
-      FRAPPE_REDIS_QUEUE: redis://redis-queue:6379
 
   redis-queue:
-    image: redis:6.2-alpine
+    image: redis:7-alpine
     networks:
       - frappe_network
     deploy:
@@ -174,7 +163,7 @@ services:
       - redis-queue-data:/data
 
   redis-cache:
-    image: redis:6.2-alpine
+    image: redis:7-alpine
     networks:
       - frappe_network
     deploy:
@@ -182,21 +171,18 @@ services:
         condition: on-failure
 
   scheduler:
-    image: frappe/erpnext:v16.14.0
-    networks:
-      - frappe_network
+    <<: *backend_defaults
+    platform: linux/amd64
     deploy:
       restart_policy:
         condition: on-failure
     command:
       - bench
       - schedule
-    volumes:
-      - sites:/home/frappe/frappe-bench/sites
-      - logs:/home/frappe/frappe-bench/logs
 
   websocket:
-    image: frappe/erpnext:v16.14.0
+    <<: [*depends_on_configurator, *customizable_image]
+    platform: linux/amd64
     networks:
       - frappe_network
     deploy:
@@ -210,7 +196,6 @@ services:
       FRAPPE_REDIS_QUEUE: redis://redis-queue:6379
     volumes:
       - sites:/home/frappe/frappe-bench/sites
-      - logs:/home/frappe/frappe-bench/logs
 
 volumes:
   db-data:

@@ -31,16 +31,15 @@ The image is built using GitHub Actions with performance optimizations and publi
 The build process includes several optimizations for reduced image size and faster builds:
 
 ### Image Size Reduction
-- **Cache Cleanup**: Removes pip, npm, and package manager caches
-- **Bytecode Removal**: Deletes Python `.pyc` files and `__pycache__` directories
-- **Source Map Removal**: Removes frontend source map files (`.map`)
-- **Expected Reduction**: 200-500MB smaller images
+- **Multi-stage Build**: Uses the upstream Frappe layered image build, which keeps the final image lean
+- **Automatic Cleanup**: The upstream Containerfile already removes `.git` directories, pip caches, and build dependencies
+- **Expected Reduction**: 200-500MB smaller images compared to a single-stage build
 
 ### Build Speed Improvements
-- **Docker BuildKit**: Enabled for advanced build features and better caching
-- **Registry & Inline Caching**: Uses Docker registry cache and inline cache for efficient layer reuse between builds
-- **BuildKit Optimization**: Advanced build features for faster builds and smaller images
-- **Expected Speedup**: 30-50% faster builds using registry cache and inline caching
+- **GitHub Actions Cache**: Uses `type=gha` for efficient layer reuse between builds, stored in GitHub's managed cache
+- **BuildKit Secrets**: Apps are installed via Docker secrets (not build args), preventing token leaks and enabling proper layer caching
+- **CACHE_BUST Control**: Cache invalidation is controlled via the `CACHE_BUST` build arg, which changes only when tracked repos or `apps.json` are updated
+- **Expected Speedup**: 50-70% faster builds using GHA cache
 
 ## Docker Image
 
@@ -124,10 +123,10 @@ The system automatically:
 ### Optimization Process
 
 During each build:
-1. **BuildKit Setup**: Configures Docker Buildx for advanced features
-2. **Registry Caching**: Pulls cache from previous image in Docker registry
-3. **Containerfile Patching**: Adds cleanup commands to remove unnecessary files
-4. **Optimized Build**: Uses BuildKit with inline and registry cache for faster builds
+1. **BuildKit Setup**: Configures Docker Buildx with QEMU for cross-platform support
+2. **GitHub Actions Cache**: Pulls cached layers from GHA cache for faster rebuilds
+3. **Secret-based Build**: Apps are passed via BuildKit secrets (not build args), keeping tokens secure
+4. **Optimized Build**: Uses BuildKit with GHA cache (`type=gha`) for efficient layer reuse
 
 ## Development
 
@@ -153,19 +152,19 @@ During each build:
    # Clone frappe_docker
    git clone https://github.com/frappe/frappe_docker
 
-   # Build the image
-   cd frappe_docker
-   APPS_JSON_BASE64=$(base64 -w 0 ../apps.json)
+   # Build the image (Docker Engine v23+ required for BuildKit secrets)
    docker build \
      --build-arg=FRAPPE_PATH=https://github.com/frappe/frappe \
      --build-arg=FRAPPE_BRANCH=version-16 \
-     --build-arg=APPS_JSON_BASE64=$APPS_JSON_BASE64 \
+     --secret=id=apps_json,src=apps.json \
      --tag=local-erpnext:test \
-     --file=images/layered/Containerfile .
+     --file=frappe_docker/images/layered/Containerfile .
 
    # Run the container
    docker run -d -p 8000:8000 local-erpnext:test
    ```
+
+   > **Note:** The `apps.json` is passed as a [BuildKit secret](https://docs.docker.com/build/building/secrets/), not a build-arg. This ensures private repository tokens are never visible in `docker image history`. Requires Docker Engine v23+.
 
 ### Environment Variables
 
@@ -184,14 +183,15 @@ Configure the following secrets in your GitHub repository:
 3. **Docker Hub Permissions**: Verify Docker Hub credentials are correctly set in GitHub secrets.
 4. **GitHub Token**: Ensure the GitHub token has the necessary permissions for repository access.
 5. **Release Detection**: Check `REPO_VERSIONS.json` to see which releases are being tracked.
-6. **Cache Issues**: If builds are slow, the Docker layer cache may need to be cleared.
+- **Cache Issues**: If builds are slow, the GitHub Actions cache may need to be cleared. Go to Actions → Manage caches in your repository settings.
 
 ### Optimization Notes
 
 - **First Build**: May be slower as it builds the cache
 - **Subsequent Builds**: Should be significantly faster with cached layers
-- **Cache Persistence**: Cache persists between workflow runs for 7 days
-- **Manual Cache Clear**: Delete the GitHub Actions cache if encountering issues
+- **Cache Persistence**: GHA cache persists based on LRU policy and has a repository size limit
+- **Manual Cache Clear**: Go to repository Settings → Actions → Caches to delete cached layers
+- **Cache Busting**: Use `force_build` workflow dispatch trigger to force a full rebuild
 
 ### Logs
 

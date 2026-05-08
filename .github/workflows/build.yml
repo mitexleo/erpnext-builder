@@ -2,8 +2,8 @@ name: Build ERPNext Custom Image
 
 on:
   schedule:
-    - cron: "0 * * * *" # every hour
-  workflow_dispatch: # manual trigger
+    - cron: "0 */6 * * *" # every 6 hours
+  workflow_dispatch:
     inputs:
       force_build:
         description: "Force build even if no new commits detected"
@@ -13,10 +13,16 @@ on:
 
 env:
   DOCKER_IMAGE: mitexleo/syserp
+  FRAPPE_BRANCH: version-16
+  FRAPPE_REPO: frappe/frappe
 
 permissions:
-  contents: write # Allows pushing commits (update files) and reading data
-  packages: write # Allows pushing Docker images if using GitHub Packages (optional)
+  contents: write
+  packages: write
+
+concurrency:
+  group: build-erpnext-custom-image
+  cancel-in-progress: false
 
 jobs:
   check-updates:
@@ -24,15 +30,11 @@ jobs:
     outputs:
       has_changes: ${{ steps.check_updates.outputs.changed }}
       new_version: ${{ steps.version.outputs.new_version }}
-      apps_json_base64: ${{ steps.encode_apps.outputs.apps_json_base64 }}
+      cache_bust: ${{ steps.cache_bust.outputs.value }}
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v6.0.2
-
-      - name: Install jq and curl
-        run: |
-          sudo apt-get update && sudo apt-get install -y jq curl
+        uses: actions/checkout@v6
 
       - name: Validate required files
         id: validate_files
@@ -59,121 +61,73 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          CURRENT_BRANCH=$(git branch --show-current)
           git add REPO_VERSIONS.json VERSION
           git commit -m "Initialize REPO_VERSIONS.json and VERSION files" || true
-          git push || true
+          git pull --rebase origin "$CURRENT_BRANCH" || true
+          git push origin "$CURRENT_BRANCH" || true
 
-      - name: Read apps.json into repos
-        id: read_apps
+      - name: Compute cache bust key
+        id: cache_bust
         run: |
-          # Create repo-branch mapping from apps.json
-          REPO_BRANCHES='{}'
+          # Combine apps.json content + current repo versions for cache invalidation
+          APPS_HASH=$(sha256sum apps.json | awk '{print $1}')
+          VERSION_HASH=$(sha256sum REPO_VERSIONS.json 2>/dev/null | awk '{print $1}' || echo "no-versions")
+          COMBINED_HASH=$(echo "${APPS_HASH}-${VERSION_HASH}" | sha256sum | awk '{print $1}')
+          echo "value=$COMBINED_HASH" >> $GITHUB_OUTPUT
 
-          # Process each app from apps.json
-          while IFS= read -r line; do
-            if [ -n "$line" ]; then
-              REPO=$(echo "$line" | jq -r '.url' | sed -E 's|https://github.com/([^/]+/[^/]+).*|\1|')
-              BRANCH=$(echo "$line" | jq -r '.branch')
-              REPO_BRANCHES=$(echo "$REPO_BRANCHES" | jq --arg r "$REPO" --arg b "$BRANCH" '.[$r]=$b')
-            fi
-          done < <(jq -c '.[]' apps.json)
-
-          # Add frappe/frappe with version-16 branch (not in apps.json)
-          REPO_BRANCHES=$(echo "$REPO_BRANCHES" | jq '. + {"frappe/frappe": "version-16"}')
-
-          # Extract just repo list for compatibility
-          REPOS=$(echo "$REPO_BRANCHES" | jq -r 'keys[]' | tr '\n' ' ')
-
-          echo "repos=$REPOS" >> $GITHUB_OUTPUT
-          # Output repo_branches as JSON string, escaping newlines for GitHub Actions
-          echo "repo_branches<<EOF" >> $GITHUB_OUTPUT
-          echo "$REPO_BRANCHES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Check for updates
+      - name: Check for updates via git ls-remote
         id: check_updates
         run: |
           CHANGED=false
           CURRENT_VERSIONS=$(cat REPO_VERSIONS.json)
 
-          # Get repo_branches from workflow output
-          REPO_BRANCHES='${{ steps.read_apps.outputs.repo_branches }}'
-
-          # Iterate through each repo and its branch
-          for repo in $(echo "$REPO_BRANCHES" | jq -r 'keys[]'); do
-            BRANCH=$(echo "$REPO_BRANCHES" | jq -r --arg r "$repo" '.[$r]')
-            echo "Checking $repo branch: $BRANCH..."
-
-            LATEST_VERSION=""
-            VERSION_TYPE=""
-
-            # Get the latest commit SHA for the specified branch only (authenticated)
-            rm -f /tmp/commit_response.json
-            HTTP_CODE=$(curl -s -o /tmp/commit_response.json -w "%{http_code}" \
-              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/$repo/commits/$BRANCH?per_page=1" 2>/dev/null || echo "000")
-            
-            if [ "$HTTP_CODE" = "200" ]; then
-              LATEST_SHA=$(jq -r '.sha // empty' /tmp/commit_response.json)
-              if [ -n "$LATEST_SHA" ] && [ "$LATEST_SHA" != "null" ]; then
-                LATEST_VERSION="$LATEST_SHA"
-                VERSION_TYPE="sha"
-                echo "✓ Got commit SHA for branch $BRANCH: ${LATEST_SHA:0:8}"
-              else
-                echo "⚠️ Empty SHA response for $repo (HTTP $HTTP_CODE)"
-              fi
-            elif [ "$HTTP_CODE" = "404" ]; then
-              echo "⚠️ Branch $BRANCH not found for $repo (HTTP 404)"
-              continue
-            elif [ "$HTTP_CODE" = "403" ]; then
-              echo "⚠️ Rate limited by GitHub API (HTTP 403)"
-              continue
-            else
-              echo "⚠️ Failed to get commit for $repo (HTTP $HTTP_CODE)"
-              continue
-            fi
-
-            # If we couldn't get commit SHA, skip this repo
-            if [ -z "$LATEST_VERSION" ]; then
-              echo "⚠️ Could not get commit SHA for $repo, skipping..."
-              continue
-            fi
-
-            # Get current version from REPO_VERSIONS.json
-            CURRENT_VERSION=$(echo "$CURRENT_VERSIONS" | jq -r --arg r "$repo" '.[$r] // empty')
-            if [ -z "$CURRENT_VERSION" ]; then
-              CURRENT_VERSION="none"
-            fi
-
-            echo "Repo: $repo"
-            echo "Branch: $BRANCH"
-            echo "Current version: $CURRENT_VERSION"
-            echo "Latest version: $LATEST_VERSION ($VERSION_TYPE)"
-
-            # Check if version has changed
-            VERSION_CHANGED=false
-
-            if [ "$CURRENT_VERSION" = "none" ]; then
-              # First time tracking this repo
-              VERSION_CHANGED=true
-              echo "First time tracking $repo, will trigger build"
-            elif [ "$CURRENT_VERSION" != "$LATEST_VERSION" ]; then
-              # Simple string comparison - works for both SHA and tag
-              VERSION_CHANGED=true
-              echo "Version changed: $CURRENT_VERSION -> $LATEST_VERSION"
-            else
-              echo "No change detected"
-            fi
-
-            if [ "$VERSION_CHANGED" = "true" ]; then
-              # Update to latest version
-              CURRENT_VERSIONS=$(echo "$CURRENT_VERSIONS" | jq --arg r "$repo" --arg v "$LATEST_VERSION" '.[$r]=$v')
+          # Check frappe/frappe (framework, not in apps.json)
+          echo "Checking $FRAPPE_REPO branch: $FRAPPE_BRANCH..."
+          LATEST_SHA=$(git ls-remote "https://github.com/$FRAPPE_REPO.git" "refs/heads/$FRAPPE_BRANCH" | awk '{print $1}')
+          if [ -n "$LATEST_SHA" ]; then
+            CURRENT_VERSION=$(echo "$CURRENT_VERSIONS" | jq -r --arg r "$FRAPPE_REPO" '.[$r] // "none"')
+            if [ "$CURRENT_VERSION" != "$LATEST_SHA" ]; then
               CHANGED=true
+              CURRENT_VERSIONS=$(echo "$CURRENT_VERSIONS" | jq --arg r "$FRAPPE_REPO" --arg v "$LATEST_SHA" '.[$r]=$v')
+              echo "✓ $FRAPPE_REPO changed: ${LATEST_SHA:0:12}"
             fi
-          done
+          else
+            echo "⚠️ Could not resolve $FRAPPE_BRANCH for $FRAPPE_REPO"
+          fi
 
-          echo "$CURRENT_VERSIONS" > REPO_VERSIONS.json
+          # Check each app from apps.json
+          while IFS= read -r app; do
+            [ -z "$app" ] && continue
+
+            URL=$(echo "$app" | jq -r '.url')
+            BRANCH=$(echo "$app" | jq -r '.branch')
+            # Extract org/repo from URL: https://github.com/org/repo -> org/repo
+            REPO=$(echo "$URL" | sed -E 's|https://github.com/([^/]+/[^/]+).*|\1|')
+
+            echo "Checking $REPO branch: $BRANCH..."
+
+            # Try branch first, then tag
+            LATEST_SHA=$(git ls-remote "$URL.git" "refs/heads/$BRANCH" | awk '{print $1}')
+            if [ -z "$LATEST_SHA" ]; then
+              LATEST_SHA=$(git ls-remote "$URL.git" "refs/tags/$BRANCH" | awk '{print $1}')
+            fi
+
+            if [ -z "$LATEST_SHA" ]; then
+              echo "⚠️ Could not resolve $BRANCH for $REPO, skipping..."
+              continue
+            fi
+
+            CURRENT_VERSION=$(echo "$CURRENT_VERSIONS" | jq -r --arg r "$REPO" '.[$r] // "none"')
+
+            if [ "$CURRENT_VERSION" != "$LATEST_SHA" ]; then
+              CHANGED=true
+              CURRENT_VERSIONS=$(echo "$CURRENT_VERSIONS" | jq --arg r "$REPO" --arg v "$LATEST_SHA" '.[$r]=$v')
+              echo "✓ $REPO changed: ${LATEST_SHA:0:12}"
+            else
+              echo "  $REPO unchanged"
+            fi
+          done < <(jq -c '.[]' apps.json)
 
           # Check if force build is requested
           if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
@@ -181,6 +135,7 @@ jobs:
             CHANGED=true
           fi
 
+          echo "$CURRENT_VERSIONS" > REPO_VERSIONS.json
           echo "changed=$CHANGED" >> $GITHUB_OUTPUT
 
           if [ "$CHANGED" = "false" ]; then
@@ -194,114 +149,101 @@ jobs:
         id: version
         run: |
           CURRENT_VERSION=$(cat VERSION)
-          echo "Current version: $CURRENT_VERSION"
           IFS='.' read -r major minor patch <<< "$CURRENT_VERSION"
           NEW_PATCH=$((patch + 1))
           NEW_VERSION="$major.$minor.$NEW_PATCH"
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "$NEW_VERSION" > VERSION
-          if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
-            echo "Version bumped to: $NEW_VERSION (force build)"
-          else
-            echo "Version bumped to: $NEW_VERSION"
-          fi
-
-      - name: Base64 encode apps.json
-        if: steps.check_updates.outputs.changed == 'true'
-        id: encode_apps
-        run: |
-          APPS_JSON_BASE64=$(base64 -w 0 apps.json)
-          echo "apps_json_base64=$APPS_JSON_BASE64" >> $GITHUB_OUTPUT
+          echo "Version bumped to: $NEW_VERSION"
 
       - name: Commit updated files
         if: steps.check_updates.outputs.changed == 'true'
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          CURRENT_BRANCH=$(git branch --show-current)
           git add REPO_VERSIONS.json VERSION
-          if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
-            git commit -m "Force build: bump version to ${{ steps.version.outputs.new_version }}"
-          else
-            git commit -m "Update SHAs and bump version to ${{ steps.version.outputs.new_version }}"
-          fi
-          git push
+          git commit -m "Update versions and bump to ${{ steps.version.outputs.new_version }}" || true
+          # Pull --rebase to avoid conflicts with concurrent runs
+          git pull --rebase origin "$CURRENT_BRANCH" || true
+          git push origin "$CURRENT_BRANCH" || true
 
   build-and-push:
     needs: check-updates
     if: needs.check-updates.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 60
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v6
 
-      - name: Pull latest changes
-        run: |
-          git fetch origin
-          git checkout -B main origin/main 2>/dev/null || git checkout -B master origin/master 2>/dev/null || git checkout -B main main 2>/dev/null || true
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v4
+        with:
+          image: tonistiigi/binfmt:latest
+          platforms: all
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v4
 
       - name: Clone frappe_docker
-        run: git clone https://github.com/frappe/frappe_docker
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4.0.0
-
-      - name: Add cleanup commands to Containerfile
-        run: |
-          cd frappe_docker
-          # Check if Containerfile exists
-          if [ ! -f "images/layered/Containerfile" ]; then
-            echo "Error: Containerfile not found at images/layered/Containerfile"
-            exit 1
-          fi
-
-          # Remove any existing cleanup command to avoid duplication
-          # Look for lines starting with RUN that contain cache cleanup commands
-          sed -i '/^RUN.*rm -rf.*\.cache\/pip/d' images/layered/Containerfile
-          sed -i '/^RUN.*pip cache purge/d' images/layered/Containerfile
-          sed -i '/^RUN.*npm cache clean/d' images/layered/Containerfile
-          sed -i '/^RUN.*yarn cache clean/d' images/layered/Containerfile
-
-          # Create a simple, robust cleanup command
-          # Use package manager commands first, then manual cleanup as fallback
-          CLEANUP_COMMAND="RUN pip cache purge 2>/dev/null || true && npm cache clean --force 2>/dev/null || true && yarn cache clean 2>/dev/null || true && rm -rf /home/frappe/.cache/pip/* 2>/dev/null || true && rm -rf /home/frappe/.npm/_cacache/* 2>/dev/null || true && rm -rf /home/frappe/.cache/yarn/* 2>/dev/null || true && find /home/frappe/frappe-bench -name \"*.pyc\" -delete 2>/dev/null || true && find /home/frappe/frappe-bench -name \"__pycache__\" -type d -exec rm -rf {} + 2>/dev/null || true && find /home/frappe/frappe-bench -name \"*.map\" -delete 2>/dev/null || true"
-
-          # Find the line before "FROM frappe/base" and insert the cleanup command
-          # Use a simple approach: find the line and insert before it
-          if grep -q "FROM frappe/base" images/layered/Containerfile; then
-            # Insert the cleanup command before the FROM line
-            sed -i "/^FROM frappe\/base/i $CLEANUP_COMMAND" images/layered/Containerfile
-            echo "✅ Cleanup commands added to Containerfile"
-          else
-            echo "⚠️ Could not find 'FROM frappe/base' in Containerfile"
-            echo "Containerfile structure:"
-            head -50 images/layered/Containerfile
-          fi
+        run: git clone --depth 1 https://github.com/frappe/frappe_docker
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v4.0.0
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build Docker image
+      - name: Build and smoke test image
+        uses: docker/build-push-action@v7
+        with:
+          context: frappe_docker
+          file: frappe_docker/images/layered/Containerfile
+          build-args: |
+            FRAPPE_PATH=https://github.com/frappe/frappe
+            FRAPPE_BRANCH=${{ env.FRAPPE_BRANCH }}
+            FRAPPE_IMAGE_PREFIX=frappe
+            CACHE_BUST=${{ needs.check-updates.outputs.cache_bust }}-${{ github.run_id }}
+          cache-from: type=gha,scope=erpnext-custom-build
+          cache-to: type=gha,mode=max,scope=erpnext-custom-build
+          load: true
+          platforms: linux/amd64
+          secrets: |
+            id=apps_json,src=${{ github.workspace }}/apps.json
+          tags: |
+            ${{ env.DOCKER_IMAGE }}:${{ needs.check-updates.outputs.new_version }}
+            ${{ env.DOCKER_IMAGE }}:latest
+
+      - name: Smoke test image contents
         env:
-          DOCKER_BUILDKIT: 1
+          NEW_VERSION: ${{ needs.check-updates.outputs.new_version }}
         run: |
-          cd frappe_docker
-          docker buildx build \
-            --build-arg BUILDKIT_INLINE_CACHE=1 \
-            --cache-to type=inline \
-            --cache-from type=registry,ref=${{ env.DOCKER_IMAGE }}:latest \
-            --build-arg=FRAPPE_PATH=https://github.com/frappe/frappe \
-            --build-arg=FRAPPE_BRANCH=version-16 \
-            --build-arg=APPS_JSON_BASE64=${{ needs.check-updates.outputs.apps_json_base64 }} \
-            --tag=${{ env.DOCKER_IMAGE }}:${{ needs.check-updates.outputs.new_version }} \
-            --tag=${{ env.DOCKER_IMAGE }}:latest \
-            --file=images/layered/Containerfile \
-            --load .
+          echo "=== Verifying installed apps ==="
+          # Verify frappe framework
+          docker run --rm --entrypoint bash "${{ env.DOCKER_IMAGE }}:$NEW_VERSION" -lc \
+            'test -d /home/frappe/frappe-bench/apps/frappe && echo "✓ frappe" || { echo "✗ frappe missing"; exit 1; }'
+
+          # Verify each app from apps.json
+          for url in $(jq -r '.[].url' apps.json); do
+            app_name=$(basename "$url")
+            echo -n "Checking $app_name... "
+            if docker run --rm --entrypoint bash "${{ env.DOCKER_IMAGE }}:$NEW_VERSION" -lc \
+              "test -d /home/frappe/frappe-bench/apps/$app_name"; then
+              echo "✓"
+            else
+              echo "✗ MISSING!"
+              exit 1
+            fi
+          done
+
+          echo ""
+          echo "✅ All apps verified successfully"
 
       - name: Push Docker image
+        env:
+          NEW_VERSION: ${{ needs.check-updates.outputs.new_version }}
         run: |
-          docker push ${{ env.DOCKER_IMAGE }}:${{ needs.check-updates.outputs.new_version }}
-          docker push ${{ env.DOCKER_IMAGE }}:latest
+          docker push "${{ env.DOCKER_IMAGE }}:$NEW_VERSION"
+          docker push "${{ env.DOCKER_IMAGE }}:latest"
