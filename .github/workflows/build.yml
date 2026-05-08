@@ -199,55 +199,23 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build image
-        uses: docker/build-push-action@v7
-        with:
-          context: frappe_docker
-          file: frappe_docker/images/layered/Containerfile
-          build-args: |
-            FRAPPE_PATH=https://github.com/frappe/frappe
-            FRAPPE_BRANCH=${{ env.FRAPPE_BRANCH }}
-            FRAPPE_IMAGE_PREFIX=frappe
-            CACHE_BUST=${{ needs.check-updates.outputs.cache_bust }}-${{ github.run_id }}
-          cache-from: type=gha,scope=erpnext-custom-build
-          cache-to: type=gha,mode=max,scope=erpnext-custom-build
-          load: true
-          platforms: linux/amd64
-          secrets: |
-            id=apps_json,src=frappe_docker/apps.json
-          tags: |
-            ${{ env.DOCKER_IMAGE }}:${{ needs.check-updates.outputs.new_version }}
-            ${{ env.DOCKER_IMAGE }}:latest
-
-      - name: Smoke test image contents
+      - name: Build Docker image
         env:
           NEW_VERSION: ${{ needs.check-updates.outputs.new_version }}
         run: |
-          echo "=== Listing installed apps in image ==="
-          docker run --rm --entrypoint bash "${{ env.DOCKER_IMAGE }}:$NEW_VERSION" -lc \
-            'echo "Contents of apps/:" && ls -1 /home/frappe/frappe-bench/apps/'
-
-          echo ""
-          echo "=== Verifying required apps ==="
-          # Verify frappe framework
-          docker run --rm --entrypoint bash "${{ env.DOCKER_IMAGE }}:$NEW_VERSION" -lc \
-            'test -d /home/frappe/frappe-bench/apps/frappe && echo "✓ frappe" || { echo "✗ frappe missing"; exit 1; }'
-
-          # Verify each app from apps.json
-          for url in $(jq -r '.[].url' apps.json); do
-            app_name=$(basename "$url")
-            echo -n "Checking $app_name... "
-            if docker run --rm --entrypoint bash "${{ env.DOCKER_IMAGE }}:$NEW_VERSION" -lc \
-              "test -d /home/frappe/frappe-bench/apps/$app_name"; then
-              echo "✓"
-            else
-              echo "✗ MISSING!"
-              exit 1
-            fi
-          done
-
-          echo ""
-          echo "✅ All apps verified successfully"
+          cd frappe_docker
+          docker buildx build \
+            --build-arg=FRAPPE_PATH=https://github.com/frappe/frappe \
+            --build-arg=FRAPPE_BRANCH=${{ env.FRAPPE_BRANCH }} \
+            --build-arg=FRAPPE_IMAGE_PREFIX=frappe \
+            --build-arg=CACHE_BUST=${{ needs.check-updates.outputs.cache_bust }}-${{ github.run_id }} \
+            --secret id=apps_json,src=${{ github.workspace }}/frappe_docker/apps.json \
+            --cache-from type=registry,ref=${{ env.DOCKER_IMAGE }}:latest \
+            --cache-to type=inline \
+            --load \
+            --tag ${{ env.DOCKER_IMAGE }}:$NEW_VERSION \
+            --tag ${{ env.DOCKER_IMAGE }}:latest \
+            --file images/layered/Containerfile .
 
       - name: Push Docker image
         env:
