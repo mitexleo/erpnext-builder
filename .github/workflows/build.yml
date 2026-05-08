@@ -190,13 +190,16 @@ jobs:
       - name: Clone frappe_docker
         run: git clone --depth 1 https://github.com/frappe/frappe_docker
 
+      - name: Copy apps.json into build context
+        run: cp apps.json frappe_docker/apps.json
+
       - name: Login to Docker Hub
         uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and smoke test image
+      - name: Build image
         uses: docker/build-push-action@v7
         with:
           context: frappe_docker
@@ -211,7 +214,7 @@ jobs:
           load: true
           platforms: linux/amd64
           secrets: |
-            id=apps_json,src=${{ github.workspace }}/apps.json
+            id=apps_json,src=frappe_docker/apps.json
           tags: |
             ${{ env.DOCKER_IMAGE }}:${{ needs.check-updates.outputs.new_version }}
             ${{ env.DOCKER_IMAGE }}:latest
@@ -220,7 +223,12 @@ jobs:
         env:
           NEW_VERSION: ${{ needs.check-updates.outputs.new_version }}
         run: |
-          echo "=== Verifying installed apps ==="
+          echo "=== Listing installed apps in image ==="
+          docker run --rm --entrypoint bash "${{ env.DOCKER_IMAGE }}:$NEW_VERSION" -lc \
+            'echo "Contents of apps/:" && ls -1 /home/frappe/frappe-bench/apps/'
+
+          echo ""
+          echo "=== Verifying required apps ==="
           # Verify frappe framework
           docker run --rm --entrypoint bash "${{ env.DOCKER_IMAGE }}:$NEW_VERSION" -lc \
             'test -d /home/frappe/frappe-bench/apps/frappe && echo "✓ frappe" || { echo "✗ frappe missing"; exit 1; }'
