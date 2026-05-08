@@ -35,6 +35,7 @@ services:
       - -c
     command:
       - >
+        echo "{}" > sites/common_site_config.json;
         ls -1 apps > sites/apps.txt;
         bench set-config -g db_host $$DB_HOST;
         bench set-config -gp db_port $$DB_PORT;
@@ -43,11 +44,11 @@ services:
         bench set-config -g redis_socketio "redis://$$REDIS_QUEUE";
         bench set-config -gp socketio_port $$SOCKETIO_PORT;
     environment:
-      DB_HOST: ${DB_HOST:-db}
-      DB_PORT: ${DB_PORT:-3306}
-      REDIS_CACHE: ${REDIS_CACHE:-redis-cache:6379}
-      REDIS_QUEUE: ${REDIS_QUEUE:-redis-queue:6379}
-      SOCKETIO_PORT: 9000
+      DB_HOST: db
+      DB_PORT: "3306"
+      REDIS_CACHE: redis-cache:6379
+      REDIS_QUEUE: redis-queue:6379
+      SOCKETIO_PORT: "9000"
     depends_on: {}
     restart: on-failure
 
@@ -116,17 +117,17 @@ services:
       - nginx-entrypoint.sh
     environment:
       BACKEND: backend:8000
-      FRAPPE_SITE_NAME_HEADER: ${FRAPPE_SITE_NAME_HEADER:-frontend}
+      FRAPPE_SITE_NAME_HEADER: frontend
       SOCKETIO: websocket:9000
-      UPSTREAM_REAL_IP_ADDRESS: ${UPSTREAM_REAL_IP_ADDRESS:-127.0.0.1}
-      UPSTREAM_REAL_IP_HEADER: ${UPSTREAM_REAL_IP_HEADER:-X-Forwarded-For}
-      UPSTREAM_REAL_IP_RECURSIVE: ${UPSTREAM_REAL_IP_RECURSIVE:-off}
-      PROXY_READ_TIMEOUT: ${PROXY_READ_TIMEOUT:-120}
-      CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-50m}
+      UPSTREAM_REAL_IP_ADDRESS: 127.0.0.1
+      UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
+      UPSTREAM_REAL_IP_RECURSIVE: "off"
+      PROXY_READ_TIMEOUT: 120
+      CLIENT_MAX_BODY_SIZE: 50m
     volumes:
       - sites:/home/frappe/frappe-bench/sites
     ports:
-      - "${HTTP_PUBLISH_PORT:-8080}:8080"
+      - "8080:8080"
 
   queue-long:
     <<: *backend_defaults
