@@ -1,11 +1,11 @@
 {
   "frappe/frappe": "81aadb9ba1bc07abccd8f720af80f4f2fb4a68a0",
-  "frappe/erpnext": "c4b7b158240373566b2bf4325e87f87169c08285",
+  "frappe/erpnext": "dd35cd1f8460dc59ed25de3821223b25eaf8ad9a",
   "frappe/hrms": "a29cc8875aab1f22707b011568f5f1f190861fc8",
   "frappe/crm": "679f27da708cfddc028a41e6ac79f43a8691e270",
   "frappe/helpdesk": "92de4ab5e921570a7e408fa7f1cf70634081a5ab",
   "frappe/telephony": "58d32184e44b193e27498d3dd156085c793b7528",
   "frappe/offsite_backups": "67c1d2416fda733e6d1c740b36a55a60bd7ef686",
   "frappe/print_designer": "9d62227e20d13c52fb4be13d05d71f544228af1d",
-  "shridarpatil/frappe_whatsapp": "5135fb07275b9a095faaf818cad904ae08e39160"
+  "shridarpatil/frappe_whatsapp": "7967eb751089d2926a3fd1c0e6f4e4f130db8bef"
 }
