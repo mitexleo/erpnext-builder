@@ -6,6 +6,6 @@
   "frappe/helpdesk": "1c3361cc0019deec6f84035a9352270b4e4eb5cb",
   "frappe/telephony": "039cf39f245d6818ead03cf94eea6ce7f9c1e1f7",
   "frappe/offsite_backups": "67c1d2416fda733e6d1c740b36a55a60bd7ef686",
-  "frappe/print_designer": "9d62227e20d13c52fb4be13d05d71f544228af1d",
+  "frappe/print_designer": "c43c7e2e8067edef6dc8e7e8d1a07c51c202ac3d",
   "shridarpatil/frappe_whatsapp": "08bc1f6af2e36022d7a5f77641c8ba2ef8c16aaa"
 }
