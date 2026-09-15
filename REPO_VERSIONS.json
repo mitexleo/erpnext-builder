@@ -2,7 +2,7 @@
   "frappe/frappe": "988e54f3c4c291e2077a83809663f123731abe76",
   "frappe/erpnext": "4048fb70e14d1843956fcdabb7c3cca75a1cbcdd",
   "frappe/hrms": "a4768b441cff346def505e27f2a2229ee1e05b9b",
-  "frappe/crm": "52c500d6bdac3cd51553f95cfae9c7a940d99f1a",
+  "frappe/crm": "0adc6715d79b7647d1bcecf41f5d2cf928253b4b",
   "frappe/helpdesk": "1c3361cc0019deec6f84035a9352270b4e4eb5cb",
   "frappe/telephony": "039cf39f245d6818ead03cf94eea6ce7f9c1e1f7",
   "frappe/offsite_backups": "4764d4312fe15204fbff0726a44e02c9947ab26c",
