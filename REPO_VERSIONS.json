@@ -1,8 +1,8 @@
 {
   "frappe/frappe": "012667b9c4e7f66d5e1ff5858d2e922331d4300a",
-  "frappe/erpnext": "b30aa5334bcea94dba74f5b866af13c43a861948",
+  "frappe/erpnext": "fb78e58b8c037bcff4f90b7361ad81ff7b1c42ba",
   "frappe/hrms": "c0a04b80eeb721417b75cea758e831464d0da041",
-  "frappe/crm": "1c9be66783274d52facb6db142cf04d07c60ea8b",
+  "frappe/crm": "a6dfe8bf39e74c22b6212a43c8dadfb569c12154",
   "frappe/helpdesk": "1c3361cc0019deec6f84035a9352270b4e4eb5cb",
   "frappe/telephony": "039cf39f245d6818ead03cf94eea6ce7f9c1e1f7",
   "frappe/offsite_backups": "4764d4312fe15204fbff0726a44e02c9947ab26c",
