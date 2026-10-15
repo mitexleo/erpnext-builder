@@ -15,10 +15,17 @@ env:
   DOCKER_IMAGE: mitexleo/syserp
   FRAPPE_BRANCH: version-16
   FRAPPE_REPO: frappe/frappe
+  # Pin the frappe_docker build recipes to a release instead of tracking `main`.
+  # Upstream v4.x introduced breaking build changes (Debian Trixie default base,
+  # arbitrary-UID/permission handling, and a BuildKit >= 0.17 / Dockerfile
+  # frontend >= 1.14 requirement for `# syntax` + `COPY --chmod=g=u`). Pin
+  # deliberately and bump this when adopting a new frappe_docker release.
+  FRAPPE_DOCKER_REF: v4.1.0
 
 permissions:
   contents: write
   packages: write
+  issues: write # Open/update the tracking issue when the frappe_docker pin is stale
 
 concurrency:
   group: build-erpnext-custom-image
@@ -168,6 +175,63 @@ jobs:
           git pull --rebase origin "$CURRENT_BRANCH" || true
           git push origin "$CURRENT_BRANCH" || true
 
+      # Pinning frappe_docker protects us from silent upstream breakage, but it can
+      # also silently rot. Resolve the newest upstream release tag every run and
+      # surface it (warning + tracking issue) when our pin falls behind.
+      - name: Check pinned frappe_docker version against upstream releases
+        id: frappe_docker_check
+        run: |
+          PINNED="${{ env.FRAPPE_DOCKER_REF }}"
+          LATEST="$(git ls-remote --tags --refs https://github.com/frappe/frappe_docker.git 2>/dev/null \
+            | awk -F'refs/tags/' '{print $2}' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V | tail -n1 || true)"
+
+          echo "Pinned: $PINNED"
+          echo "Latest upstream release: ${LATEST:-<none found>}"
+
+          if [ -z "$LATEST" ]; then
+            echo "::warning::Could not resolve an upstream frappe_docker release tag; skipping comparison."
+            echo "outdated=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "pinned=$PINNED" >> $GITHUB_OUTPUT
+          echo "latest=$LATEST" >> $GITHUB_OUTPUT
+
+          if [ "$LATEST" != "$PINNED" ]; then
+            echo "outdated=true" >> $GITHUB_OUTPUT
+            echo "::warning::frappe_docker $LATEST is available but the workflow pins $PINNED. Review https://github.com/frappe/frappe_docker/releases and bump FRAPPE_DOCKER_REF."
+          else
+            echo "outdated=false" >> $GITHUB_OUTPUT
+            echo "frappe_docker pin $PINNED is already the latest release."
+          fi
+
+      - name: Open/update tracking issue when the pin is stale
+        if: steps.frappe_docker_check.outputs.outdated == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PINNED: ${{ steps.frappe_docker_check.outputs.pinned }}
+          LATEST: ${{ steps.frappe_docker_check.outputs.latest }}
+        run: |
+          TITLE="frappe_docker pin is out of date"
+          BODY="The build workflow pins \`frappe_docker\` to **${PINNED}**, but a newer upstream release (**${LATEST}**) is available.
+
+          Review the release notes for breaking build-recipe changes, then bump \`FRAPPE_DOCKER_REF\` in \`.github/workflows/build.yml\` after validating the build:
+
+          - Releases: https://github.com/frappe/frappe_docker/releases
+          - Latest run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          _Created automatically by the build workflow; it updates in place while the pin stays stale._"
+
+          EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            gh issue edit "$EXISTING" --body "$BODY"
+            echo "Updated existing tracking issue #$EXISTING"
+          else
+            gh issue create --title "$TITLE" --body "$BODY"
+          fi
+
   build-and-push:
     needs: check-updates
     if: needs.check-updates.outputs.has_changes == 'true'
@@ -187,8 +251,8 @@ jobs:
       - name: Setup Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Clone frappe_docker
-        run: git clone --depth 1 https://github.com/frappe/frappe_docker
+      - name: Clone frappe_docker (${{ env.FRAPPE_DOCKER_REF }})
+        run: git clone --depth 1 --branch "${{ env.FRAPPE_DOCKER_REF }}" https://github.com/frappe/frappe_docker
 
       - name: Copy apps.json into build context
         run: cp apps.json frappe_docker/apps.json
@@ -202,20 +266,50 @@ jobs:
       - name: Build Docker image
         env:
           NEW_VERSION: ${{ needs.check-updates.outputs.new_version }}
+          CACHE_BUST: ${{ needs.check-updates.outputs.cache_bust }}-${{ github.run_id }}
+        shell: bash
         run: |
+          # `bench init` downloads the entire JS dependency tree for frappe and every
+          # app from the public npm/yarn registry. A single transient registry 5xx
+          # (e.g. 'chai-6.2.2.tgz: Request failed "503 Service Unavailable"' while
+          # installing the crm app) aborts the whole build, so retry with backoff.
+          set +e
           cd frappe_docker
-          docker buildx build \
-            --build-arg=FRAPPE_PATH=https://github.com/frappe/frappe \
-            --build-arg=FRAPPE_BRANCH=${{ env.FRAPPE_BRANCH }} \
-            --build-arg=FRAPPE_IMAGE_PREFIX=frappe \
-            --build-arg=CACHE_BUST=${{ needs.check-updates.outputs.cache_bust }}-${{ github.run_id }} \
-            --secret id=apps_json,src=${{ github.workspace }}/frappe_docker/apps.json \
-            --cache-from type=registry,ref=${{ env.DOCKER_IMAGE }}:latest \
-            --cache-to type=inline \
-            --load \
-            --tag ${{ env.DOCKER_IMAGE }}:$NEW_VERSION \
-            --tag ${{ env.DOCKER_IMAGE }}:latest \
-            --file images/layered/Containerfile .
+          max_attempts=3
+          attempt=1
+          while [ "$attempt" -le "$max_attempts" ]; do
+            echo "::group::docker buildx build (attempt ${attempt}/${max_attempts})"
+            docker buildx build \
+              --build-arg=FRAPPE_PATH=https://github.com/frappe/frappe \
+              --build-arg=FRAPPE_BRANCH="${FRAPPE_BRANCH}" \
+              --build-arg=FRAPPE_IMAGE_PREFIX=frappe \
+              --build-arg=CACHE_BUST="${CACHE_BUST}" \
+              --secret id=apps_json,src="${GITHUB_WORKSPACE}/frappe_docker/apps.json" \
+              --cache-from type=registry,ref="${DOCKER_IMAGE}:latest" \
+              --cache-to type=inline \
+              --load \
+              --tag "${DOCKER_IMAGE}:${NEW_VERSION}" \
+              --tag "${DOCKER_IMAGE}:latest" \
+              --file images/layered/Containerfile .
+            rc=$?
+            echo "::endgroup::"
+
+            if [ "$rc" -eq 0 ]; then
+              echo "Image build succeeded on attempt ${attempt}."
+              exit 0
+            fi
+
+            echo "::warning::docker buildx build failed (exit ${rc}) on attempt ${attempt}/${max_attempts}."
+            attempt=$((attempt + 1))
+            if [ "$attempt" -le "$max_attempts" ]; then
+              backoff=$(((attempt - 1) * 30))
+              echo "Retrying in ${backoff}s..."
+              sleep "$backoff"
+            fi
+          done
+
+          echo "::error::Image build failed after ${max_attempts} attempts."
+          exit 1
 
       - name: Push Docker image
         env:
