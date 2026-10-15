@@ -111,6 +111,7 @@ The GitHub Actions workflow will automatically build a new image with your app i
 The build workflow runs automatically:
 - **Scheduled**: Every 6 hours (checks for new releases)
 - **Manual**: Via GitHub Actions workflow dispatch (force build option)
+- **On merge**: When `frappe_docker.ref` changes on `main`, i.e. a frappe_docker bump PR is merged
 
 ### Versioning
 
@@ -119,6 +120,17 @@ The system automatically:
 2. Increments the patch version (e.g., 1.0.0 → 1.0.1) when changes are detected
 3. Tags the new image with both the new version and `latest`
 4. Updates `REPO_VERSIONS.json` with the latest release tags
+
+### frappe_docker Version Pin
+
+The `frappe_docker` build recipes are pinned in `frappe_docker.ref` at the repo root instead of tracking `main`, so upstream's breaking build-recipe changes only land through review.
+
+- Every run checks the pin against the newest upstream release tag.
+- When a newer release exists, the workflow opens (or updates) a pull request titled `Bump frappe_docker to <version>` that changes the single line in `frappe_docker.ref`.
+- Review the [release notes](https://github.com/frappe/frappe_docker/releases) and merge to adopt it; the merge triggers a rebuild that publishes a new image.
+- To opt out of automatic bumps, set `frappe_docker.ref` to a branch (e.g. `main`); the check then skips non-tag pins.
+
+> **One-time repository setting:** enable **Settings → Actions → General → Allow GitHub Actions to create and approve pull requests** so the workflow can open the bump PR.
 
 ### Optimization Process
 
