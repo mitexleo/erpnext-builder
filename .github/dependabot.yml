@@ -1,0 +1,18 @@
+version: 2
+updates:
+  # GitHub Actions used by the build workflow (actions/checkout, docker/*, ...).
+  # Dependabot opens these PRs with its own app, so they are independent of the
+  # "Allow GitHub Actions to create and approve pull requests" repo setting.
+  # Merging one does not rebuild the image (the push trigger only watches
+  # frappe_docker.ref); the next scheduled run picks it up.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
