@@ -77,10 +77,19 @@ jobs:
       - name: Compute cache bust key
         id: cache_bust
         run: |
-          # Combine apps.json content + current repo versions for cache invalidation
+          # Invalidation key for the `bench init` layer. It changes when:
+          #   - apps.json changes, or
+          #   - the tracked repo versions (REPO_VERSIONS.json) change, i.e. a real update, or
+          #   - a force build is requested, so `force_build` still forces a rebuild.
+          # It deliberately does NOT change on every run, so re-running the same commit
+          # reuses cached layers instead of re-downloading every dependency.
           APPS_HASH=$(sha256sum apps.json | awk '{print $1}')
           VERSION_HASH=$(sha256sum REPO_VERSIONS.json 2>/dev/null | awk '{print $1}' || echo "no-versions")
-          COMBINED_HASH=$(echo "${APPS_HASH}-${VERSION_HASH}" | sha256sum | awk '{print $1}')
+          FORCE_NONCE=""
+          if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
+            FORCE_NONCE="force-${{ github.run_id }}"
+          fi
+          COMBINED_HASH=$(echo "${APPS_HASH}-${VERSION_HASH}-${FORCE_NONCE}" | sha256sum | awk '{print $1}')
           echo "value=$COMBINED_HASH" >> $GITHUB_OUTPUT
 
       - name: Check for updates via git ls-remote
@@ -266,7 +275,7 @@ jobs:
       - name: Build Docker image
         env:
           NEW_VERSION: ${{ needs.check-updates.outputs.new_version }}
-          CACHE_BUST: ${{ needs.check-updates.outputs.cache_bust }}-${{ github.run_id }}
+          CACHE_BUST: ${{ needs.check-updates.outputs.cache_bust }}
         shell: bash
         run: |
           # `bench init` downloads the entire JS dependency tree for frappe and every
