@@ -18,7 +18,10 @@ on:
 
 env:
   DOCKER_IMAGE: mitexleo/syserp
-  FRAPPE_BRANCH: version-16
+  # Track the newest release tag on the supported major line (v16.*) rather than
+  # the moving `version-16` branch. A branch head can jump to a new major
+  # (version-16 briefly reported 17.0.0) and break the version-16 app set.
+  FRAPPE_RELEASE_LINE: "v16"
   FRAPPE_REPO: frappe/frappe
   # The frappe_docker build recipes are pinned in `frappe_docker.ref` (repo root)
   # rather than tracking `main`, so upstream's breaking build-recipe changes
@@ -41,6 +44,7 @@ jobs:
       has_changes: ${{ steps.check_updates.outputs.changed }}
       new_version: ${{ steps.version.outputs.new_version }}
       cache_bust: ${{ steps.cache_bust.outputs.value }}
+      frappe_ref: ${{ steps.check_updates.outputs.frappe_ref }}
 
     steps:
       - name: Checkout Repository
@@ -112,18 +116,36 @@ jobs:
           CHANGED=false
           CURRENT_VERSIONS=$(cat REPO_VERSIONS.json)
 
-          # Check frappe/frappe (framework, not in apps.json)
-          echo "Checking $FRAPPE_REPO branch: $FRAPPE_BRANCH..."
-          LATEST_SHA=$(git ls-remote "https://github.com/$FRAPPE_REPO.git" "refs/heads/$FRAPPE_BRANCH" | awk '{print $1}')
-          if [ -n "$LATEST_SHA" ]; then
-            CURRENT_VERSION=$(echo "$CURRENT_VERSIONS" | jq -r --arg r "$FRAPPE_REPO" '.[$r] // "none"')
-            if [ "$CURRENT_VERSION" != "$LATEST_SHA" ]; then
-              CHANGED=true
-              CURRENT_VERSIONS=$(echo "$CURRENT_VERSIONS" | jq --arg r "$FRAPPE_REPO" --arg v "$LATEST_SHA" '.[$r]=$v')
-              echo "✓ $FRAPPE_REPO changed: ${LATEST_SHA:0:12}"
-            fi
+          # Frappe framework (not in apps.json): track the newest release tag on
+          # the supported release line (e.g. v16.*) instead of the moving branch.
+          # A branch head can jump to a new major (version-16 briefly reported
+          # 17.0.0), which is incompatible with the version-16 app set.
+          echo "Resolving latest ${FRAPPE_RELEASE_LINE} release tag for $FRAPPE_REPO..."
+          FRAPPE_REF="$(git ls-remote --tags --refs "https://github.com/$FRAPPE_REPO.git" 2>/dev/null \
+            | awk -F'refs/tags/' '{print $2}' \
+            | grep -E "^${FRAPPE_RELEASE_LINE}\\.[0-9]+\\.[0-9]+$" \
+            | sort -V | tail -n1 || true)"
+
+          if [ -z "$FRAPPE_REF" ]; then
+            FRAPPE_REF="$(echo "$CURRENT_VERSIONS" | jq -r --arg r "$FRAPPE_REPO" '.[$r] // empty')"
+            echo "⚠️ Could not resolve a $FRAPPE_RELEASE_LINE tag; reusing recorded ref: ${FRAPPE_REF:-<none>}"
+          fi
+
+          if [ -z "$FRAPPE_REF" ]; then
+            echo "::error::Unable to determine a Frappe framework ref"
+            exit 1
+          fi
+
+          echo "frappe_ref=$FRAPPE_REF" >> $GITHUB_OUTPUT
+          echo "Frappe framework ref: $FRAPPE_REF"
+
+          CURRENT_VERSION=$(echo "$CURRENT_VERSIONS" | jq -r --arg r "$FRAPPE_REPO" '.[$r] // "none"')
+          if [ "$CURRENT_VERSION" != "$FRAPPE_REF" ]; then
+            CHANGED=true
+            CURRENT_VERSIONS=$(echo "$CURRENT_VERSIONS" | jq --arg r "$FRAPPE_REPO" --arg v "$FRAPPE_REF" '.[$r]=$v')
+            echo "✓ $FRAPPE_REPO changed: $FRAPPE_REF"
           else
-            echo "⚠️ Could not resolve $FRAPPE_BRANCH for $FRAPPE_REPO"
+            echo "  $FRAPPE_REPO unchanged"
           fi
 
           # Check each app from apps.json
@@ -345,7 +367,7 @@ jobs:
             echo "::group::docker buildx build (attempt ${attempt}/${max_attempts})"
             docker buildx build \
               --build-arg=FRAPPE_PATH=https://github.com/frappe/frappe \
-              --build-arg=FRAPPE_BRANCH="${FRAPPE_BRANCH}" \
+              --build-arg=FRAPPE_BRANCH="${{ needs.check-updates.outputs.frappe_ref }}" \
               --build-arg=FRAPPE_IMAGE_PREFIX=frappe \
               --build-arg=CACHE_BUST="${CACHE_BUST}" \
               --secret id=apps_json,src="${GITHUB_WORKSPACE}/frappe_docker/apps.json" \

@@ -121,6 +121,10 @@ The system automatically:
 3. Tags the new image with both the new version and `latest`
 4. Updates `REPO_VERSIONS.json` with the latest release tags
 
+### Frappe Framework Version
+
+The framework tracks the newest release tag on the supported major line (`v16.*`), configured as `FRAPPE_RELEASE_LINE` in `.github/workflows/build.yml`. This keeps automatic patch updates while preventing a major bump from being adopted silently — branch heads can jump majors (the `version-16` branch briefly reported `17.0.0`, which is incompatible with the version-16 app set and broke crm's frontend build). To move to a new major, change `FRAPPE_RELEASE_LINE`.
+
 ### frappe_docker Version Pin
 
 The `frappe_docker` build recipes are pinned in `frappe_docker.ref` at the repo root instead of tracking `main`, so upstream's breaking build-recipe changes only land through review.
