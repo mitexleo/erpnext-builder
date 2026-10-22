@@ -6,14 +6,16 @@ A custom ERPNext Docker image build configuration that includes multiple Frappe 
 
 This project builds a custom ERPNext Docker image with the following applications:
 
-- **Frappe** (core framework) - version-16
-- **ERPNext** - version-16
-- **HRMS** - Human Resource Management System - version-16
-- **Builder** - Website and page builder - master branch
-- **CRM** - Customer Relationship Management - main branch
-- **Helpdesk** - Ticketing and support system - main branch
+- **Frappe** (core framework) - v16 release line
+- **ERPNext** - v16 release line
+- **HRMS** - Human Resource Management System - v16 release line
+- **CRM** - Customer Relationship Management - latest v1 release
+- **Helpdesk** - Ticketing and support system - latest v1 release
 - **Telephony** - Telephony integration - develop branch
-- **Mail** - Email management - develop branch
+- **Offsite Backups** - Backup integrations - version-16 branch
+- **WhatsApp** - Official WhatsApp integration - latest v1 release
+
+> **Print Designer is intentionally not included:** [`frappe/print_designer`](https://github.com/frappe/print_designer) is archived and no longer maintained. Frappe v16 ships a built-in [Print Format Editor](https://docs.frappe.io/framework/user/en/printing/print-format-editor).
 
 The image is built using GitHub Actions with performance optimizations and published to Docker Hub as `mitexleo/syserp`.
 
@@ -62,9 +64,8 @@ The `apps.json` file defines which Frappe applications are included in the build
   { "url": "https://github.com/frappe/helpdesk", "branch": "main", "release_line": "v1" },
   { "url": "https://github.com/frappe/telephony", "branch": "develop" },
   { "url": "https://github.com/frappe/offsite_backups", "branch": "version-16" },
-  { "url": "https://github.com/frappe/print_designer", "branch": "main", "release_line": "v1" },
   { "url": "https://github.com/frappe/crm", "branch": "main", "release_line": "v1" },
-  { "url": "https://github.com/shridarpatil/frappe_whatsapp", "branch": "master", "release_line": "v1" }
+  { "url": "https://github.com/frappe/whatsapp", "branch": "develop", "release_line": "v1" }
 ]
 ```
 
