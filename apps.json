@@ -1,15 +1,18 @@
 [
   {
     "url": "https://github.com/frappe/erpnext",
-    "branch": "version-16"
+    "branch": "version-16",
+    "release_line": "v16"
   },
   {
     "url": "https://github.com/frappe/hrms",
-    "branch": "version-16"
+    "branch": "version-16",
+    "release_line": "v16"
   },
   {
     "url": "https://github.com/frappe/helpdesk",
-    "branch": "main"
+    "branch": "main",
+    "release_line": "v1"
   },
   {
     "url": "https://github.com/frappe/telephony",
@@ -21,14 +24,17 @@
   },
   {
     "url": "https://github.com/frappe/print_designer",
-    "branch": "main"
+    "branch": "main",
+    "release_line": "v1"
   },
   {
     "url": "https://github.com/frappe/crm",
-    "branch": "main"
+    "branch": "main",
+    "release_line": "v1"
   },
   {
     "url": "https://github.com/shridarpatil/frappe_whatsapp",
-    "branch": "master"
+    "branch": "master",
+    "release_line": "v1"
   }
 ]

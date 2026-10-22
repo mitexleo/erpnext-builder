@@ -57,36 +57,20 @@ The `apps.json` file defines which Frappe applications are included in the build
 
 ```json
 [
-  {
-    "url": "https://github.com/frappe/erpnext",
-    "branch": "version-16"
-  },
-  {
-    "url": "https://github.com/frappe/hrms",
-    "branch": "version-16"
-  },
-  {
-    "url": "https://github.com/frappe/builder",
-    "branch": "master"
-  },
-  {
-    "url": "https://github.com/frappe/crm",
-    "branch": "main"
-  },
-  {
-    "url": "https://github.com/frappe/helpdesk",
-    "branch": "main"
-  },
-  {
-    "url": "https://github.com/frappe/telephony",
-    "branch": "develop"
-  },
-  {
-    "url": "https://github.com/frappe/mail",
-    "branch": "develop"
-  }
+  { "url": "https://github.com/frappe/erpnext", "branch": "version-16", "release_line": "v16" },
+  { "url": "https://github.com/frappe/hrms", "branch": "version-16", "release_line": "v16" },
+  { "url": "https://github.com/frappe/helpdesk", "branch": "main", "release_line": "v1" },
+  { "url": "https://github.com/frappe/telephony", "branch": "develop" },
+  { "url": "https://github.com/frappe/offsite_backups", "branch": "version-16" },
+  { "url": "https://github.com/frappe/print_designer", "branch": "main", "release_line": "v1" },
+  { "url": "https://github.com/frappe/crm", "branch": "main", "release_line": "v1" },
+  { "url": "https://github.com/shridarpatil/frappe_whatsapp", "branch": "master", "release_line": "v1" }
 ]
 ```
+
+`release_line` (optional) pins an app to the newest published release tag on that line (e.g. `v16`, `v1`) instead of a moving branch; the workflow resolves it every run and passes the resolved tag to the build. Only set it for repositories that actually publish release tags — `telephony` and `offsite_backups` publish none, so they keep tracking their branches. If a configured line resolves to no tags, the workflow warns and falls back to the branch.
+
+> The resolved `{url, branch}` pairs are written into the build context; the raw `apps.json` (with `release_line`) is not passed to `bench` directly.
 
 ### Adding New Apps
 
@@ -99,6 +83,7 @@ To add a new Frappe application, follow these steps:
      "branch": "main"
    }
    ```
+   If the repository publishes release tags and you want stable releases, add `"release_line": "v1"` (or the matching major) alongside `branch`.
 
 2. Commit and push your changes
 

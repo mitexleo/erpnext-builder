@@ -45,6 +45,7 @@ jobs:
       new_version: ${{ steps.version.outputs.new_version }}
       cache_bust: ${{ steps.cache_bust.outputs.value }}
       frappe_ref: ${{ steps.check_updates.outputs.frappe_ref }}
+      resolved_apps: ${{ steps.check_updates.outputs.resolved_apps }}
 
     steps:
       - name: Checkout Repository
@@ -148,38 +149,66 @@ jobs:
             echo "  $FRAPPE_REPO unchanged"
           fi
 
-          # Check each app from apps.json
+          # Check each app from apps.json. Apps with a `release_line` are pinned to
+          # the newest release tag on that line (e.g. v16 / v1) instead of a moving
+          # branch; apps without one (no published tags, e.g. telephony and
+          # offsite_backups) keep tracking their branch.
+          RESOLVED_APPS='[]'
           while IFS= read -r app; do
             [ -z "$app" ] && continue
 
             URL=$(echo "$app" | jq -r '.url')
             BRANCH=$(echo "$app" | jq -r '.branch')
+            RELEASE_LINE=$(echo "$app" | jq -r '.release_line // empty')
             # Extract org/repo from URL: https://github.com/org/repo -> org/repo
             REPO=$(echo "$URL" | sed -E 's|https://github.com/([^/]+/[^/]+).*|\1|')
 
-            echo "Checking $REPO branch: $BRANCH..."
-
-            # Try branch first, then tag
-            LATEST_SHA=$(git ls-remote "$URL.git" "refs/heads/$BRANCH" | awk '{print $1}')
-            if [ -z "$LATEST_SHA" ]; then
-              LATEST_SHA=$(git ls-remote "$URL.git" "refs/tags/$BRANCH" | awk '{print $1}')
+            if [ -n "$RELEASE_LINE" ]; then
+              REF="$(git ls-remote --tags --refs "$URL.git" 2>/dev/null \
+                | awk -F'refs/tags/' '{print $2}' \
+                | grep -E "^${RELEASE_LINE}\\.[0-9]+\\.[0-9]+$" \
+                | sort -V | tail -n1 || true)"
+              if [ -n "$REF" ]; then
+                echo "Checking $REPO release $REF (line $RELEASE_LINE)..."
+                VERSION_ID="$REF"
+              else
+                echo "⚠️ No $RELEASE_LINE release tag for $REPO; falling back to branch $BRANCH"
+                REF="$BRANCH"
+                VERSION_ID="$(git ls-remote "$URL.git" "refs/heads/$BRANCH" | awk '{print $1}')"
+              fi
+            else
+              echo "Checking $REPO branch: $BRANCH..."
+              REF="$BRANCH"
+              VERSION_ID="$(git ls-remote "$URL.git" "refs/heads/$BRANCH" | awk '{print $1}')"
+              if [ -z "$VERSION_ID" ]; then
+                VERSION_ID="$(git ls-remote "$URL.git" "refs/tags/$BRANCH" | awk '{print $1}')"
+              fi
             fi
 
-            if [ -z "$LATEST_SHA" ]; then
-              echo "⚠️ Could not resolve $BRANCH for $REPO, skipping..."
+            if [ -z "$VERSION_ID" ]; then
+              echo "⚠️ Could not resolve $REPO at $REF; keeping branch $BRANCH"
+              REF="$BRANCH"
+            fi
+
+            # Always include the app in the build, resolved ref or original branch.
+            RESOLVED_APPS=$(echo "$RESOLVED_APPS" | jq --arg u "$URL" --arg b "$REF" '. + [{url: $u, branch: $b}]')
+
+            if [ -z "$VERSION_ID" ]; then
               continue
             fi
 
             CURRENT_VERSION=$(echo "$CURRENT_VERSIONS" | jq -r --arg r "$REPO" '.[$r] // "none"')
 
-            if [ "$CURRENT_VERSION" != "$LATEST_SHA" ]; then
+            if [ "$CURRENT_VERSION" != "$VERSION_ID" ]; then
               CHANGED=true
-              CURRENT_VERSIONS=$(echo "$CURRENT_VERSIONS" | jq --arg r "$REPO" --arg v "$LATEST_SHA" '.[$r]=$v')
-              echo "✓ $REPO changed: ${LATEST_SHA:0:12}"
+              CURRENT_VERSIONS=$(echo "$CURRENT_VERSIONS" | jq --arg r "$REPO" --arg v "$VERSION_ID" '.[$r]=$v')
+              echo "✓ $REPO changed: $VERSION_ID"
             else
               echo "  $REPO unchanged"
             fi
           done < <(jq -c '.[]' apps.json)
+
+          echo "resolved_apps=$(echo "$RESOLVED_APPS" | jq -c '.')" >> $GITHUB_OUTPUT
 
           # Check if force build is requested
           if [ "${{ github.event.inputs.force_build }}" = "true" ]; then
@@ -340,8 +369,17 @@ jobs:
           echo "Cloning frappe_docker at $REF"
           git clone --depth 1 --branch "$REF" https://github.com/frappe/frappe_docker
 
-      - name: Copy apps.json into build context
-        run: cp apps.json frappe_docker/apps.json
+      - name: Write resolved apps.json into build context
+        env:
+          RESOLVED_APPS: ${{ needs.check-updates.outputs.resolved_apps }}
+        run: |
+          if [ -z "$RESOLVED_APPS" ]; then
+            echo "::error::resolved apps list is empty"
+            exit 1
+          fi
+          printf '%s\n' "$RESOLVED_APPS" | jq . > frappe_docker/apps.json
+          echo "Apps to install:"
+          jq -r '.[] | "  \(.url) @ \(.branch)"' frappe_docker/apps.json
 
       - name: Login to Docker Hub
         uses: docker/login-action@v4
