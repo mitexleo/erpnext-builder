@@ -1,11 +1,11 @@
 {
   "frappe/frappe": "v16.52.0",
-  "frappe/erpnext": "90cb7f9243048a44311777d60a1cec8ca05ceec9",
-  "frappe/hrms": "5c72c067c0a3bcc969a49c708b7bec545a046fe9",
-  "frappe/crm": "0baa1e8ea462b92d2920bcfdc7a532a730329b6c",
-  "frappe/helpdesk": "7d7e394e7571fbdbdda04a65a279566b0ac9ce7f",
+  "frappe/erpnext": "v16.52.0",
+  "frappe/hrms": "v16.52.0",
+  "frappe/crm": "v1.88.0",
+  "frappe/helpdesk": "v1.31.0",
   "frappe/telephony": "9447577500a25d242088398157b72c654fa34b20",
   "frappe/offsite_backups": "4764d4312fe15204fbff0726a44e02c9947ab26c",
-  "frappe/print_designer": "1619f057cb239294b1fde9b5a05ce76e6d79e473",
-  "shridarpatil/frappe_whatsapp": "08bc1f6af2e36022d7a5f77641c8ba2ef8c16aaa"
+  "frappe/print_designer": "v1.6.7",
+  "shridarpatil/frappe_whatsapp": "v1.0.11"
 }
