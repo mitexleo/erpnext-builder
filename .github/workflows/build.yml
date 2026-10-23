@@ -23,6 +23,12 @@ env:
   # (version-16 briefly reported 17.0.0) and break the version-16 app set.
   FRAPPE_RELEASE_LINE: "v16"
   FRAPPE_REPO: frappe/frappe
+  # Docker Hub publishes moving branch tags (`version-16`) for frappe/build and
+  # frappe/base, but release tags only partially and late (frappe/base:v16.53.0
+  # existed while frappe/build:v16.53.0 did not). The build recipe uses one arg
+  # for both the base image tag and the framework checkout, so keep the image
+  # tag on the branch and pin the checkout separately via FRAPPE_REF.
+  FRAPPE_IMAGE_TAG: "version-16"
   # The frappe_docker build recipes are pinned in `frappe_docker.ref` (repo root)
   # rather than tracking `main`, so upstream's breaking build-recipe changes
   # (Debian Trixie base, arbitrary-UID/permissions, BuildKit/frontend requirements)
@@ -369,6 +375,30 @@ jobs:
           echo "Cloning frappe_docker at $REF"
           git clone --depth 1 --branch "$REF" https://github.com/frappe/frappe_docker
 
+      - name: Pin framework ref in the build recipe
+        env:
+          FRAPPE_REF: ${{ needs.check-updates.outputs.frappe_ref }}
+        run: |
+          CONTAINERFILE=frappe_docker/images/layered/Containerfile
+
+          # `FRAPPE_BRANCH` is overloaded in frappe_docker's recipe: it selects
+          # the `frappe/build` and `frappe/base` image tags and is also passed
+          # to `bench init` as the git ref. Upstream does not publish matching
+          # release images for every framework tag (frappe/build:v16.53.0 was
+          # missing while frappe/base:v16.53.0 existed), so a release tag as
+          # FRAPPE_BRANCH fails at image resolution. Patch the cloned recipe so
+          # the base images stay on the branch tag and only the checkout is
+          # pinned to the release tag.
+          MATCHES=$(grep -cF -- '--frappe-branch=${FRAPPE_BRANCH}' "$CONTAINERFILE" || true)
+          if [ "$MATCHES" -ne 1 ]; then
+            echo "::error::$CONTAINERFILE no longer matches the expected build recipe; cannot pin the framework ref."
+            exit 1
+          fi
+          sed -i 's|--frappe-branch=${FRAPPE_BRANCH}|--frappe-branch=${FRAPPE_REF}|' "$CONTAINERFILE"
+          sed -i 's|^ARG FRAPPE_PATH=|ARG FRAPPE_REF=${FRAPPE_BRANCH}\nARG FRAPPE_PATH=|' "$CONTAINERFILE"
+          echo "Framework checkout: $FRAPPE_REF (base images: ${FRAPPE_IMAGE_TAG})"
+          grep -nE 'FRAPPE_REF|--frappe-branch|^FROM' "$CONTAINERFILE"
+
       - name: Write resolved apps.json into build context
         env:
           RESOLVED_APPS: ${{ needs.check-updates.outputs.resolved_apps }}
@@ -391,6 +421,7 @@ jobs:
         env:
           NEW_VERSION: ${{ needs.check-updates.outputs.new_version }}
           CACHE_BUST: ${{ needs.check-updates.outputs.cache_bust }}
+          FRAPPE_REF: ${{ needs.check-updates.outputs.frappe_ref }}
         shell: bash
         run: |
           # `bench init` downloads the entire JS dependency tree for frappe and every
@@ -405,7 +436,8 @@ jobs:
             echo "::group::docker buildx build (attempt ${attempt}/${max_attempts})"
             docker buildx build \
               --build-arg=FRAPPE_PATH=https://github.com/frappe/frappe \
-              --build-arg=FRAPPE_BRANCH="${{ needs.check-updates.outputs.frappe_ref }}" \
+              --build-arg=FRAPPE_BRANCH="${FRAPPE_IMAGE_TAG}" \
+              --build-arg=FRAPPE_REF="${FRAPPE_REF}" \
               --build-arg=FRAPPE_IMAGE_PREFIX=frappe \
               --build-arg=CACHE_BUST="${CACHE_BUST}" \
               --secret id=apps_json,src="${GITHUB_WORKSPACE}/frappe_docker/apps.json" \

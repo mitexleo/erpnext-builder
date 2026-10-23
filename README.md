@@ -111,6 +111,8 @@ The system automatically:
 
 The framework tracks the newest release tag on the supported major line (`v16.*`), configured as `FRAPPE_RELEASE_LINE` in `.github/workflows/build.yml`. This keeps automatic patch updates while preventing a major bump from being adopted silently — branch heads can jump majors (the `version-16` branch briefly reported `17.0.0`, which is incompatible with the version-16 app set and broke crm's frontend build). To move to a new major, change `FRAPPE_RELEASE_LINE`.
 
+`frappe_docker`'s recipe uses `FRAPPE_BRANCH` for both the `frappe/build`/`frappe/base` image tag and the `bench init` git ref. Docker Hub does not publish matching release tags for both images (`frappe/build:v16.53.0` was missing while `frappe/base:v16.53.0` existed), so the workflow patches the cloned recipe to add a separate `FRAPPE_REF` argument: the base images stay on the moving `version-16` tag (`FRAPPE_IMAGE_TAG`) and only the framework checkout is pinned to the resolved release tag.
+
 ### frappe_docker Version Pin
 
 The `frappe_docker` build recipes are pinned in `frappe_docker.ref` at the repo root instead of tracking `main`, so upstream's breaking build-recipe changes only land through review.
