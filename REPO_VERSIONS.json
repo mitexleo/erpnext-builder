@@ -2,8 +2,8 @@
   "frappe/frappe": "v16.54.0",
   "frappe/erpnext": "v16.53.0",
   "frappe/hrms": "v16.52.0",
-  "frappe/crm": "v1.89.2",
-  "frappe/helpdesk": "v1.31.0",
+  "frappe/crm": "v1.90.0",
+  "frappe/helpdesk": "v1.31.1",
   "frappe/telephony": "9447577500a25d242088398157b72c654fa34b20",
   "frappe/offsite_backups": "4764d4312fe15204fbff0726a44e02c9947ab26c",
   "frappe/whatsapp": "v1.2.0"
