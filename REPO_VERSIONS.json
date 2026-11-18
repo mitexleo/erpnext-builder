@@ -1,7 +1,7 @@
 {
-  "frappe/frappe": "v16.60.0",
+  "frappe/frappe": "v16.60.1",
   "frappe/erpnext": "v16.60.0",
-  "frappe/hrms": "v16.54.1",
+  "frappe/hrms": "v16.60.0",
   "frappe/crm": "v1.92.0",
   "frappe/helpdesk": "v1.32.0",
   "frappe/telephony": "99c0c3b2cbd70246ed33295ebe8548e2ddded17d",
